@@ -44,15 +44,6 @@ mod modules {
     pub mod workflow;
 }
 
-// Parse the JWT secret from the .env file once on boot
-let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set in .env");
-
-let app_state = AppState { 
-    db: pool.clone(),
-    jwt_decoding_key: std::sync::Arc::new(jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes())),
-    jwt_encoding_key: std::sync::Arc::new(jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_bytes())),
-};
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Initialize Environment & Enterprise Observability (Tracing)
@@ -89,7 +80,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Database schema is up to date.");
 
     // 4. Build Shared Application State
-    let app_state = AppState { db: pool.clone() };
+    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set in .env");
+    
+    let app_state = AppState { 
+        db: pool.clone(),
+        jwt_decoding_key: std::sync::Arc::new(jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes())),
+        jwt_encoding_key: std::sync::Arc::new(jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_bytes())),
+    };
 
     // 5. Spawn Asynchronous Background Workers (Event Bus)
     // This detaches a thread to handle the `event_bus` outbox without blocking HTTP requests.
