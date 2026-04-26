@@ -44,7 +44,14 @@ mod modules {
     pub mod workflow;
 }
 
-use crate::state::AppState;
+// Parse the JWT secret from the .env file once on boot
+let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set in .env");
+
+let app_state = AppState { 
+    db: pool.clone(),
+    jwt_decoding_key: std::sync::Arc::new(jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes())),
+    jwt_encoding_key: std::sync::Arc::new(jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_bytes())),
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
