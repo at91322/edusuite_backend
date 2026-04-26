@@ -1,4 +1,4 @@
-use axum::Router
+use axum::Router;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
