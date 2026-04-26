@@ -44,6 +44,8 @@ mod modules {
     pub mod workflow;
 }
 
+use crate::state::AppState;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Initialize Environment & Enterprise Observability (Tracing)
