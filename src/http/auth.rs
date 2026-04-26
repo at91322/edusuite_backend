@@ -13,8 +13,8 @@ use crate::{http::extractors::TenantContext, state::AppState};
 /// The expected payload inside the JWT Bearer Token
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
-    pub sub: Uuid,        // The standard Subject claim maps to core.users(id)
-    pub tenant_id: Uuid,  // Custom claim mapping to core.tenants(id)
+    pub sub: Uuid,        // Maps to core.users(id)
+    pub tenant_id: Uuid,  // Maps to core.tenants(id)
     pub exp: usize,       // Expiration timestamp
     pub iat: usize,       // Issued at timestamp
 }
