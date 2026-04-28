@@ -13,6 +13,17 @@
 
 BEGIN;
 
+-- ── Set audit context ─────────────────────────────────────────────────────────
+-- The write_audit_log() trigger fires on core.users INSERT and reads
+-- app.current_tenant_id / app.current_user_id from the session. Without
+-- these being set, tenant_id in audit_logs would be NULL (NOT NULL violation).
+-- We use a sentinel "system" actor UUID and no specific tenant for seed inserts
+-- since this data spans all tenants.
+-- Using postgres superuser bypasses RLS; the audit trigger still fires.
+SELECT set_config('app.current_tenant_id', '00000000-0000-0000-0000-000000000000', true);
+SELECT set_config('app.current_user_id',   '00000000-0000-0000-0000-000000000000', true);
+SELECT set_config('app.current_service',   'seed-script', true);
+
 -- ── oauth_clients: platform client (required for token_families FK) ───────────
 INSERT INTO auth_governance.oauth_clients
     (id, client_name, client_type, grant_types, tenant_id)
