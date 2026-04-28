@@ -77,6 +77,9 @@ pub async fn check_account_lockout(
     user_id:   Uuid,
     tenant_id: Uuid,
 ) -> Result<LockoutStatus, AppError> {
+    // fetch_optional: the SECURITY DEFINER function returns zero rows when
+    // no lockout record exists for this user (first login, clean account).
+    // In that case we return the safe default: not locked, zero failures.
     let row = sqlx::query!(
         r#"
         SELECT
@@ -88,15 +91,22 @@ pub async fn check_account_lockout(
         user_id,
         tenant_id,
     )
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
     .map_err(AppError::from)?;
 
-    Ok(LockoutStatus {
-        is_locked:            row.is_locked,
-        locked_until:         row.locked_until,
-        failed_attempt_count: row.failed_attempt_count,
-    })
+    match row {
+        Some(r) => Ok(LockoutStatus {
+            is_locked:            r.is_locked,
+            locked_until:         r.locked_until,
+            failed_attempt_count: r.failed_attempt_count,
+        }),
+        None => Ok(LockoutStatus {
+            is_locked:            false,
+            locked_until:         None,
+            failed_attempt_count: 0,
+        }),
+    }
 }
 
 // UNTYPED — INET param ($3)
@@ -212,9 +222,12 @@ pub async fn record_login_event(
 
 // ── Token family creation ─────────────────────────────────────────────────────
 // UNTYPED — INET param ($4 created_ip)
+// Takes a transaction so the INSERT runs inside the RLS context set by
+// begin_rls_transaction(). Using &PgPool here would grab a different
+// connection with no tenant context, causing the WITH CHECK to fail (42501).
 
 pub async fn create_token_family(
-    pool:      &PgPool,
+    tx:        &mut sqlx::Transaction<'_, sqlx::Postgres>,
     user_id:   Uuid,
     tenant_id: Uuid,
     client_id: Uuid,
@@ -225,25 +238,28 @@ pub async fn create_token_family(
         r#"INSERT INTO auth_governance.token_families
             (user_id, tenant_id, client_id, grant_type, created_ip, created_ua)
         VALUES ($1, $2, $3, 'password', $4::inet, $5)
-        RETURNING id"#,
+        RETURNING id::text AS id"#,
     )
     .bind(user_id)
     .bind(tenant_id)
     .bind(client_id)
     .bind(ip)
     .bind(ua)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await
     .map_err(AppError::from)?;
 
-    let id: Uuid = row.try_get("id").map_err(AppError::from)?;
+    let id_str: String = row.try_get("id").map_err(AppError::from)?;
+    let id = id_str.parse::<Uuid>()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Bad UUID from token_families insert: {}", e)))?;
     Ok(id)
 }
 
 // ── Refresh token insertion ───────────────────────────────────────────────────
 
+// Takes a transaction so the INSERT runs inside the RLS context.
 pub async fn insert_refresh_token(
-    pool:       &PgPool,
+    tx:         &mut sqlx::Transaction<'_, sqlx::Postgres>,
     family_id:  Uuid,
     tenant_id:  Uuid,
     token_hash: &str,
@@ -260,7 +276,7 @@ pub async fn insert_refresh_token(
         token_hash,
         expires_at,
     )
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .map_err(AppError::from)?;
     Ok(())
@@ -288,26 +304,57 @@ pub async fn rotate_refresh_token(
     new_expires_at: DateTime<Utc>,
     consumed_ip:    Option<&str>,
 ) -> Result<Option<RotatedFamily>, AppError> {
+    // Cast UUIDs to text explicitly — when the SECURITY DEFINER function
+    // returns NULL UUIDs, the untyped driver can receive them as empty
+    // strings rather than SQL NULL, causing uuid parse errors. Receiving
+    // as Option<String> and parsing manually avoids this entirely.
     let row = sqlx::query(
-        r#"SELECT family_id, tenant_id, user_id, was_theft
+        r#"SELECT
+            family_id::text  AS family_id,
+            tenant_id::text  AS tenant_id,
+            user_id::text    AS user_id,
+            was_theft
         FROM core.rotate_refresh_token($1, $2, $3, $4::inet)"#,
     )
     .bind(old_token_hash)
     .bind(new_token_hash)
     .bind(new_expires_at)
     .bind(consumed_ip)
-    .fetch_one(pool)
+    .fetch_optional(pool)   // fetch_optional: zero rows = token not found
     .await
     .map_err(AppError::from)?;
 
-    let was_theft: bool         = row.try_get("was_theft").map_err(AppError::from)?;
-    let family_id: Option<Uuid> = row.try_get("family_id").map_err(AppError::from)?;
-    let tenant_id: Option<Uuid> = row.try_get("tenant_id").map_err(AppError::from)?;
-    let user_id:   Option<Uuid> = row.try_get("user_id").map_err(AppError::from)?;
+    // Zero rows = token not found or already expired
+    let row = match row {
+        Some(r) => r,
+        None => return Err(AppError::Unauthorized(
+            "Refresh token not found or expired".to_string(),
+        )),
+    };
+
+    let was_theft: bool             = row.try_get("was_theft").map_err(AppError::from)?;
+    let family_id: Option<String>   = row.try_get("family_id").map_err(AppError::from)?;
+    let tenant_id: Option<String>   = row.try_get("tenant_id").map_err(AppError::from)?;
+    let user_id:   Option<String>   = row.try_get("user_id").map_err(AppError::from)?;
 
     if was_theft {
         return Ok(None);
     }
+
+    // Parse the text UUIDs — empty string or missing = token not usable
+    let parse_uuid = |s: Option<String>, field: &str| -> Result<Option<Uuid>, AppError> {
+        match s {
+            None => Ok(None),
+            Some(v) if v.is_empty() => Ok(None),
+            Some(v) => v.parse::<Uuid>().map(Some).map_err(|e| {
+                AppError::Internal(anyhow::anyhow!("Bad {} from rotate_refresh_token: {}", field, e))
+            }),
+        }
+    };
+
+    let family_id = parse_uuid(family_id, "family_id")?;
+    let tenant_id = parse_uuid(tenant_id, "tenant_id")?;
+    let user_id   = parse_uuid(user_id,   "user_id")?;
 
     match (family_id, tenant_id, user_id) {
         (Some(fid), Some(tid), Some(uid)) => Ok(Some(RotatedFamily {
@@ -328,6 +375,9 @@ pub async fn revoke_token_family(
     family_id:     Uuid,
     revoke_reason: &str,
 ) -> Result<(), AppError> {
+    // WHERE status != 'revoked' makes this idempotent — calling revoke on an
+    // already-revoked family is a no-op rather than an error, so logout can
+    // be called multiple times safely.
     sqlx::query!(
         r#"
         UPDATE auth_governance.token_families
@@ -335,7 +385,8 @@ pub async fn revoke_token_family(
             revoked_at    = now(),
             revoke_reason = $2,
             updated_at    = now()
-        WHERE id = $1
+        WHERE id     = $1
+          AND status != 'revoked'
         "#,
         family_id,
         revoke_reason,

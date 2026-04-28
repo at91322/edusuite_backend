@@ -39,7 +39,7 @@ use crate::{
     error::AppError,
     http::auth::{
         begin_rls_transaction, generate_refresh_token, hash_token,
-        AuthUser, JwtClaims,
+        AuthUser, AuthUserForLogout, JwtClaims,
     },
     modules::auth_governance::{
         models::{LoginRequest, LoginResponse, MeResponse, RefreshRequest, RefreshResponse},
@@ -173,11 +173,11 @@ pub async fn login(
     queries::touch_last_accessed(&mut tx, creds.user_id, creds.tenant_id).await?;
 
     // ── 6. Create token family ────────────────────────────────────────────
-    // The INSERT runs inside the RLS transaction so WITH CHECK passes.
+    // Must use &mut tx (not &state.db) — the INSERT must run on the same
+    // connection where set_config established the RLS tenant context.
+    // A pool connection would have no context set -> 42501 RLS violation.
     let family_id = queries::create_token_family(
-        // Note: we pass the pool here because token_families INSERT
-        // needs the RLS-scoped transaction executor
-        &state.db,
+        &mut tx,
         creds.user_id,
         creds.tenant_id,
         state.config.platform_client_id,
@@ -192,7 +192,7 @@ pub async fn login(
     let expires_at   = Utc::now() + chrono::Duration::seconds(refresh_ttl);
 
     queries::insert_refresh_token(
-        &state.db,
+        &mut tx,
         family_id,
         creds.tenant_id,
         &token_hash,
@@ -200,7 +200,13 @@ pub async fn login(
     )
     .await?;
 
-    // ── 8. Write success login event ──────────────────────────────────────
+    // ── 8. Commit first, then write login event ──────────────────────────
+    // record_login_event references family_id via FK on token_families.
+    // token_families was inserted inside tx — committing first makes it
+    // visible to the login_events INSERT which runs on a separate connection
+    // via the SECURITY DEFINER function.
+    tx.commit().await.map_err(AppError::from)?;
+
     queries::record_login_event(
         &state.db,
         creds.tenant_id,
@@ -210,8 +216,6 @@ pub async fn login(
         ua.as_deref(),
         Some(family_id),
     ).await?;
-
-    tx.commit().await.map_err(AppError::from)?;
 
     // ── 9. Issue access JWT ───────────────────────────────────────────────
     let access_token = issue_access_jwt(
@@ -321,11 +325,12 @@ pub async fn refresh(
 
 pub async fn logout(
     State(state): State<AppState>,
-    mut user: AuthUser,
+    mut user: AuthUserForLogout,
 ) -> Result<impl IntoResponse, AppError> {
 
-    // AuthUser extractor already validated the JWT and opened an RLS transaction.
-    // Revoke the token family (the family_id is in the claims).
+    // Revoke the family — idempotent if already revoked.
+    // Uses AuthUserForLogout which skips the family status check so
+    // calling logout on an already-revoked session still returns 204.
     queries::revoke_token_family(
         &mut user.tx,
         user.claims.family_id,
@@ -333,7 +338,6 @@ pub async fn logout(
     )
     .await?;
 
-    // Write a session_expired login event
     queries::record_login_event(
         &state.db,
         user.claims.tenant_id,

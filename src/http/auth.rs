@@ -106,6 +106,85 @@ impl FromRequestParts<AppState> for AuthUser {
         let claims = token_data.claims;
 
         // ── 3. Open transaction with RLS context ──────────────────────────
+        let mut tx = begin_rls_transaction(
+            &state.db,
+            claims.tenant_id,
+            claims.sub,
+            "api",
+        )
+        .await?;
+
+        // ── 4. Check token family is still active ─────────────────────────
+        // Must run INSIDE the transaction so the RLS context (set_config) is
+        // active — token_families has a restrictive tenant_isolation_policy
+        // that requires app.current_tenant_id to be set. Without it the row
+        // is invisible and we'd incorrectly reject valid tokens.
+        //
+        // Stateless JWTs remain cryptographically valid after logout until
+        // they expire. This check closes that window: logout and theft
+        // detection both set family status = 'revoked', so revoked sessions
+        // are rejected immediately regardless of the JWT expiry time.
+        let family_status = sqlx::query!(
+            r#"
+            SELECT status::text AS "status!"
+            FROM auth_governance.token_families
+            WHERE id        = $1
+              AND tenant_id = $2
+            "#,
+            claims.family_id,
+            claims.tenant_id,
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Family status check failed: {}", e)))?;
+
+        match family_status {
+            None => {
+                return Err(AppError::Unauthorized("Session not found".to_string()));
+            }
+            Some(row) if row.status != "active" => {
+                return Err(AppError::Unauthorized(
+                    "Session has been revoked. Please log in again.".to_string(),
+                ));
+            }
+            _ => {} // active — proceed
+        }
+
+        Ok(AuthUser { claims, tx })
+    }
+}
+
+// ── AuthUserForLogout extractor ───────────────────────────────────────────────
+//
+// Identical to AuthUser but skips the family status check so logout remains
+// idempotent — calling logout on an already-revoked session still returns 204
+// rather than 401. The logout handler revokes the family if active, no-ops if
+// already revoked. A valid signed JWT is still required.
+
+pub struct AuthUserForLogout {
+    pub claims: JwtClaims,
+    pub tx:     sqlx::Transaction<'static, sqlx::Postgres>,
+}
+
+#[async_trait]
+impl FromRequestParts<AppState> for AuthUserForLogout {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let token  = extract_bearer_token(&parts.headers)?;
+
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.validate_exp = true;
+
+        let token_data = decode::<JwtClaims>(&token, &state.jwt_decoding_key, &validation)
+            .map_err(AppError::from)?;
+
+        let claims = token_data.claims;
+
+        // Open RLS transaction — no family status check for logout
         let tx = begin_rls_transaction(
             &state.db,
             claims.tenant_id,
@@ -114,7 +193,7 @@ impl FromRequestParts<AppState> for AuthUser {
         )
         .await?;
 
-        Ok(AuthUser { claims, tx })
+        Ok(AuthUserForLogout { claims, tx })
     }
 }
 
@@ -201,10 +280,13 @@ pub fn hash_token(raw: &str) -> String {
 /// Generate a cryptographically random refresh token.
 ///
 /// Returns a 64-character hex string (32 bytes of randomness).
-/// This is the value sent to the client.
+/// Uses OsRng directly rather than thread_rng to guarantee OS-level
+/// entropy on every call — no risk of reseeding lag on Windows.
+/// This is the value sent to the client; the hash is stored.
 pub fn generate_refresh_token() -> String {
+    use rand::rngs::OsRng;
     use rand::RngCore;
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    OsRng.fill_bytes(&mut bytes);
     hex::encode(bytes)
 }
