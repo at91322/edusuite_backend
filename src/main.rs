@@ -1,11 +1,9 @@
 use axum::{
-    middleware,
     routing::get,
     Router,
 };
-use dotenvy::dotenv;
 use sqlx::postgres::PgPoolOptions;
-use std::{env, time::Duration};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -44,85 +42,103 @@ mod modules {
     pub mod workflow;
 }
 
-use crate::state::AppState;
+use crate::{
+    config::Config,
+    state::AppState,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Initialize Environment & Enterprise Observability (Tracing)
-    dotenv().ok();
+    // ── 1. Observability ──────────────────────────────────────────────────
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            env::var("RUST_LOG").unwrap_or_else(|_| "info,edusuite_backend=debug".into()),
-        ))
+        .with(tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "info,edusuite_backend=debug".into()))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     tracing::info!("Bootstrapping EduSuite Enterprise API...");
 
-    // 2. Establish PostgreSQL Connection Pool
-    // NOTE: If using PgBouncer in Transaction mode, you must disable prepared statements
-    // by appending `?statement_cache_capacity=0` to your DATABASE_URL.
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env");
-    
+    // ── 2. Configuration ──────────────────────────────────────────────────
+    // Config::from_env() calls dotenvy::dotenv() internally, validates all
+    // required variables, and panics with a clear message if any are missing.
+    let config = Config::from_env();
+
+    // ── 3. PostgreSQL Connection Pool ─────────────────────────────────────
+    // NOTE: If using PgBouncer in Transaction mode, disable prepared
+    // statements by appending `?statement_cache_capacity=0` to DATABASE_URL.
     let pool = PgPoolOptions::new()
-        .max_connections(50) // Adjust based on PgBouncer limits
+        .max_connections(50)    // Adjust based on PgBouncer limits
         .min_connections(5)
         .acquire_timeout(Duration::from_secs(5))
         .idle_timeout(Duration::from_secs(600))
-        .connect(&database_url)
+        .connect(&config.database_url)
         .await?;
 
     tracing::info!("PostgreSQL Connection Pool Established.");
 
-    // 3. Automated Database Migrations
-    // This looks for a `migrations/` folder in your project root and runs any pending .sql files.
-    // This solves the problem of how your massive schema gets into the database safely.
+    // ── 4. Database Migrations ────────────────────────────────────────────
     tracing::info!("Running pending database migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("Database schema is up to date.");
 
-    // 4. Build Shared Application State
-    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set in .env");
-    
-    let app_state = AppState { 
+    // ── 5. Application State ──────────────────────────────────────────────
+    // Both encoding and decoding keys are kept on AppState:
+    //   jwt_encoding_key — for signing new tokens (login, refresh)
+    //   jwt_decoding_key — for verifying incoming tokens (AuthUser extractor)
+    let app_state = AppState {
         db: pool.clone(),
-        jwt_decoding_key: std::sync::Arc::new(jsonwebtoken::DecodingKey::from_secret(jwt_secret.as_bytes())),
-        jwt_encoding_key: std::sync::Arc::new(jsonwebtoken::EncodingKey::from_secret(jwt_secret.as_bytes())),
+        jwt_encoding_key: std::sync::Arc::new(
+            jsonwebtoken::EncodingKey::from_secret(config.jwt_secret.as_bytes()),
+        ),
+        jwt_decoding_key: std::sync::Arc::new(
+            jsonwebtoken::DecodingKey::from_secret(config.jwt_secret.as_bytes()),
+        ),
+        config,
     };
 
-    // 5. Spawn Asynchronous Background Workers (Event Bus)
-    // This detaches a thread to handle the `event_bus` outbox without blocking HTTP requests.
+    // ── 6. Background Workers ─────────────────────────────────────────────
     spawn_event_bus_worker(pool.clone());
 
-    // 6. Global Middleware Configuration
+    // ── 7. Middleware ─────────────────────────────────────────────────────
     let cors = CorsLayer::new()
-        .allow_origin(Any) // In production, restrict to your specific frontend domains
+        // TODO: restrict to specific frontend domains before production
+        .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // 7. Construct the Routing Tree
-    // We namespace the API and mount each of your 19 domains cleanly.
+    // Capture port before app_state is consumed by with_state() below.
+    let port = app_state.config.port;
+
+    // ── 8. Router ─────────────────────────────────────────────────────────
+    // All domain modules are mounted. Auth routes are public (no JWT required
+    // — they produce the token). All other /api/v1 routes will require JWT
+    // once require_jwt middleware is activated below.
     let api_v1 = Router::new()
-        .nest("/auth", modules::auth_governance::router())
-        .nest("/board", modules::board::router())
-        .nest("/catalog", modules::catalog::router())
-        .nest("/cms", modules::cms::router())
-        .nest("/collab", modules::collab::router())
-        .nest("/comms", modules::comms::router())
-        .nest("/core", modules::core::router())
-        .nest("/crm", modules::crm::router())
+        // ── Auth (public — no JWT required) ───────────────────────────────
+        .nest("/auth",     modules::auth_governance::router())
+        // ── Domain modules (JWT required — uncomment middleware below) ────
+        .nest("/board",    modules::board::router())
+        .nest("/catalog",  modules::catalog::router())
+        .nest("/cms",      modules::cms::router())
+        .nest("/collab",   modules::collab::router())
+        .nest("/comms",    modules::comms::router())
+        .nest("/core",     modules::core::router())
+        .nest("/crm",      modules::crm::router())
         .nest("/data-gov", modules::data_governance::router())
-        .nest("/dms", modules::dms::router())
-        .nest("/finance", modules::finance::router())
-        .nest("/hr", modules::hr::router())
-        .nest("/lms", modules::lms::router())
-        .nest("/ops", modules::ops::router())
-        .nest("/policy", modules::policy::router())
-        .nest("/reference", modules::reference::router())
-        .nest("/sis", modules::sis::router())
+        .nest("/dms",      modules::dms::router())
+        .nest("/finance",  modules::finance::router())
+        .nest("/hr",       modules::hr::router())
+        .nest("/lms",      modules::lms::router())
+        .nest("/ops",      modules::ops::router())
+        .nest("/policy",   modules::policy::router())
+        .nest("/reference",modules::reference::router())
+        .nest("/sis",      modules::sis::router())
         .nest("/workflow", modules::workflow::router())
-        // Apply the JWT Authentication Middleware to ALL /api/v1 routes
-        // .route_layer(middleware::from_fn(http::auth::require_jwt))
+        // ── JWT middleware (activate once first domain handlers are built) ─
+        // .route_layer(middleware::from_fn_with_state(
+        //     app_state.clone(),
+        //     http::auth::require_jwt,
+        // ))
         ;
 
     let app = Router::new()
@@ -132,37 +148,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(cors)
         .with_state(app_state);
 
-    // 8. Bind to Port and Serve
-    let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    
-    tracing::info!("EduSuite API successfully bound to port {}", port);
-    axum::serve(listener, app).await?;
+    // ── 9. Listen ─────────────────────────────────────────────────────────
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = TcpListener::bind(&addr).await?;
+    tracing::info!("EduSuite API successfully bound to {}", addr);
 
+    axum::serve(listener, app).await?;
     Ok(())
 }
 
-/// Simple health check endpoint for Load Balancers / Kubernetes
+/// Simple health check for load balancers and Kubernetes liveness probes.
 async fn health_check() -> &'static str {
     "EduSuite API is online and healthy."
 }
 
-/// The Event Bus Background Worker
-/// This runs infinitely in the background, checking your `event_bus` schema for pending outbox messages.
-fn spawn_event_bus_worker(pool: sqlx::PgPool) {
+/// Event Bus background worker.
+///
+/// Polls `event_bus.outbox` every 5 seconds for pending events and dispatches
+/// them to the appropriate downstream service. Uses `FOR UPDATE SKIP LOCKED`
+/// so multiple worker instances can run without double-processing.
+fn spawn_event_bus_worker(_pool: sqlx::PgPool) {
     tokio::spawn(async move {
         tracing::info!("Event Bus Worker started.");
-        let mut interval = tokio::time::interval(Duration::from_secs(5)); // Poll every 5 seconds
-        
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+
         loop {
             interval.tick().await;
-            
-            // Example logic:
-            // 1. SELECT * FROM event_bus.outbox WHERE status = 'pending' LIMIT 50 FOR UPDATE SKIP LOCKED;
-            // 2. Loop through events and execute cross-domain logic (e.g., calling Comms API to send email).
+
+            // TODO: implement event dispatch when outbox Rust structs are defined
+            // 1. SELECT * FROM event_bus.outbox
+            //    WHERE status = 'pending' LIMIT 50 FOR UPDATE SKIP LOCKED
+            // 2. Dispatch each event to the subscriber service
             // 3. UPDATE event_bus.outbox SET status = 'processed' WHERE id = ...
-            
-            // Note: Actual SQL execution is omitted here until we define the Rust structs for the outbox.
         }
     });
 }

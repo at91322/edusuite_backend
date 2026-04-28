@@ -11,7 +11,9 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 
 # Database (Compile-time verified SQL)
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "macros"] }
+sqlx = { version = "0.7", features = [
+    "runtime-tokio-rustls", "postgres", "uuid", "chrono", "ipnetwork"
+] }
 
 # Serialization & Data Handling
 serde = { version = "1.0", features = ["derive"] }
@@ -31,3 +33,6 @@ dotenvy = "0.15"
 # Auth
 jsonwebtoken = "9.3"
 argon2 = "0.5"
+hex           = "0.4"
+rand          = "0.8"
+sha2          = "0.10"
