@@ -95,3 +95,53 @@ pub async fn get_student(
         }
     }
 }
+
+// ── GET /sis/courses ──────────────────────────────────────────────────────────
+
+pub async fn list_courses(
+    State(_state): State<AppState>,
+    mut user: AuthUser,
+    Query(params): Query<crate::modules::sis::models::ListCoursesParams>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::modules::sis::models::CourseListResponse;
+
+    let (courses, total) = queries::list_courses(&mut user.tx, &params).await?;
+    let per_page    = params.per_page();
+    let page        = params.page();
+    let total_pages = (total + per_page - 1) / per_page;
+
+    user.tx.commit().await.map_err(AppError::from)?;
+
+    Ok(Json(CourseListResponse { data: courses, page, per_page, total, total_pages }))
+}
+
+// ── GET /sis/courses/:id ──────────────────────────────────────────────────────
+
+pub async fn get_course(
+    State(_state): State<AppState>,
+    mut user: AuthUser,
+    Path(course_id): Path<uuid::Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+
+    let course = queries::get_course(&mut user.tx, course_id).await?;
+    user.tx.commit().await.map_err(AppError::from)?;
+
+    match course {
+        None    => Err(AppError::NotFound(format!("Course {} not found", course_id))),
+        Some(c) => Ok(Json(c)),
+    }
+}
+
+// ── GET /sis/students/:id/enrollments ────────────────────────────────────────
+
+pub async fn get_student_enrollments(
+    State(_state): State<AppState>,
+    mut user: AuthUser,
+    Path(student_id): Path<uuid::Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+
+    let enrollments = queries::get_student_enrollments(&mut user.tx, student_id).await?;
+    user.tx.commit().await.map_err(AppError::from)?;
+
+    Ok(Json(enrollments))
+}

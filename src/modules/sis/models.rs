@@ -144,3 +144,84 @@ pub struct StudentProgram {
     pub status:       String,
     pub declared_on:  chrono::NaiveDate,
 }
+
+// ── Courses ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ListCoursesParams {
+    pub department_id: Option<uuid::Uuid>,
+    pub subject:       Option<String>,
+    pub is_active:     Option<bool>,
+    pub page:          Option<i64>,
+    pub per_page:      Option<i64>,
+}
+
+impl ListCoursesParams {
+    pub fn page(&self) -> i64 { self.page.unwrap_or(1).max(1) }
+    pub fn per_page(&self) -> i64 { self.per_page.unwrap_or(25).min(100).max(1) }
+    pub fn offset(&self) -> i64 { (self.page() - 1) * self.per_page() }
+}
+
+#[derive(Debug, Serialize)]
+pub struct CourseSummary {
+    pub id:              uuid::Uuid,
+    pub subject:         String,
+    pub course:          String,
+    pub title:           String,
+    pub credits:         f64,
+    pub is_active:       Option<bool>,
+    pub department_name: Option<String>,
+    pub grading_basis:   String,
+    pub course_level:    Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CourseListResponse {
+    pub data:        Vec<CourseSummary>,
+    pub page:        i64,
+    pub per_page:    i64,
+    pub total:       i64,
+    pub total_pages: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CourseDetail {
+    pub id:                     uuid::Uuid,
+    pub subject:                String,
+    pub course:                 String,
+    pub title:                  String,
+    pub description:            Option<String>,
+    pub credits:                f64,
+    pub is_active:              Option<bool>,
+    pub department_id:          uuid::Uuid,
+    pub department_name:        Option<String>,
+    pub grading_basis:          String,
+    pub course_level:           Option<String>,
+    pub lecture_hours:          f64,
+    pub lab_hours:              f64,
+    pub clinical_hours:         f64,
+    pub independent_study_hours: f64,
+    pub total_contact_hours:    Option<f64>,
+    pub is_repeatable:          bool,
+    pub max_repeat_attempts:    Option<i16>,
+    pub effective_start_date:   chrono::NaiveDate,
+    pub catalog_year:           Option<i32>,
+}
+
+// ── Enrollments ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct StudentEnrollment {
+    pub id:                   uuid::Uuid,
+    pub section_id:           uuid::Uuid,
+    pub status:               String,
+    pub enrolled_at:          chrono::DateTime<chrono::Utc>,
+    pub credit_hours_enrolled: Option<f64>,
+    pub course_subject:       String,
+    pub course_number:        String,
+    pub course_title:         String,
+    pub term_name:            String,
+    pub term_id:              uuid::Uuid,
+    pub instructor_name:      Option<String>,
+    pub section_number:       String,
+}
