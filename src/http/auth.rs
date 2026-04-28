@@ -157,21 +157,30 @@ pub async fn begin_rls_transaction(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to begin transaction: {}", e)))?;
 
-    // Set RLS context. The order matters:
-    //   SET ROLE must come before SET LOCAL (role switch clears locals).
-    // Since we connect as edusuite_app already (no SET ROLE needed),
-    // we go straight to the locals.
-    sqlx::query(&format!(
-        "SET LOCAL app.current_tenant_id = '{}'; \
-         SET LOCAL app.current_user_id   = '{}'; \
-         SET LOCAL app.current_service   = '{}';",
-        tenant_id, user_id, source_service
-    ))
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        AppError::Internal(anyhow::anyhow!("Failed to set RLS context: {}", e))
-    })?;
+    // PostgreSQL's prepared statement protocol only allows ONE command per
+    // statement. Concatenating SET LOCAL calls with semicolons causes:
+    //   "cannot insert multiple commands into a prepared statement"
+    //
+    // Solution: use set_config(key, value, is_local=true) — a single
+    // SQL function call per variable. is_local=true makes it transaction-
+    // scoped, identical behaviour to SET LOCAL.
+    sqlx::query("SELECT set_config('app.current_tenant_id', $1, true)")
+        .bind(tenant_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to set tenant context: {}", e)))?;
+
+    sqlx::query("SELECT set_config('app.current_user_id', $1, true)")
+        .bind(user_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to set user context: {}", e)))?;
+
+    sqlx::query("SELECT set_config('app.current_service', $1, true)")
+        .bind(source_service)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to set service context: {}", e)))?;
 
     Ok(tx)
 }
