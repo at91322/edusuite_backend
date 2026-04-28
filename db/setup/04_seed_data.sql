@@ -9,6 +9,9 @@
 -- Safe to re-run on a database that was partially seeded.
 --
 -- DO NOT USE IN PRODUCTION. These are fixed UUIDs and a known password.
+--
+-- BE SURE TO SEED A ROW IN TENANT_MEMBERSHIPS FOR EACH SEED USER OTHERWISE
+-- THEY WILL BE INVISIBLE TO THE core.users TABLE RLS POLICY
 -- =============================================================================
 
 BEGIN;
@@ -78,6 +81,7 @@ INSERT INTO core.users (id, username, password_hash, first_name, last_name, is_a
 ON CONFLICT (id) DO NOTHING;
 
 -- ── Tenant memberships ───────────────────────────────────────────────────────
+-- This is vitally important, every seeded user needs a tenant_memberships row or they'll be invisible under core.users RLS
 INSERT INTO core.tenant_memberships (id, tenant_id, user_id, system_role) VALUES
     ('c0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'tenant_admin'::core.system_role),
     ('c0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000002', 'tenant_admin'::core.system_role),
