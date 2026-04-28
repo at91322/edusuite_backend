@@ -1,6 +1,6 @@
 // src/modules/sis/handlers.rs
 
-use axum::{extract::{Query, State}, response::IntoResponse, Json};
+use axum::{extract::{Path, Query, State}, response::IntoResponse, Json};
 
 use crate::{
     error::AppError,
@@ -60,4 +60,38 @@ pub async fn list_students(
         total,
         total_pages,
     }))
+}
+
+// ── GET /sis/students/:id ─────────────────────────────────────────────────────
+//
+// Returns the full student record for a single student.
+// Returns 404 if the student_id does not belong to the authenticated tenant
+// (RLS ensures cross-tenant data is invisible, not a 403).
+//
+// FERPA: demographics fields are included. Role-gating (staff/admin only)
+// will be added in a future middleware pass over all SIS detail endpoints.
+
+pub async fn get_student(
+    State(_state): State<AppState>,
+    mut user: AuthUser,
+    Path(student_id): Path<uuid::Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+
+    let student = queries::get_student(&mut user.tx, student_id).await?;
+
+    user.tx.commit().await.map_err(AppError::from)?;
+
+    match student {
+        None => Err(AppError::NotFound(
+            format!("Student {} not found", student_id)
+        )),
+        Some(s) => {
+            tracing::debug!(
+                tenant_id  = %user.claims.tenant_id,
+                student_id = %student_id,
+                "GET /sis/students/:id"
+            );
+            Ok(Json(s))
+        }
+    }
 }

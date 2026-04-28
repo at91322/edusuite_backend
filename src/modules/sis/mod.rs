@@ -9,5 +9,6 @@ use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/students", get(handlers::list_students))
+        .route("/students",     get(handlers::list_students))
+        .route("/students/:id", get(handlers::get_student))
 }
