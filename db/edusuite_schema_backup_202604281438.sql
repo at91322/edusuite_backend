@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict edhbKPB3S7JZrF5eXQERsefe6D5hVXbABsfllfj1ficeUQx3Soi4MDugzfE5Opx
+\restrict kPfkiHjXttdkaQXJ67SstcVIU3tCLC4pJySOWkbC0ijJb4O2c0b4HEhKdBgNavb
 
 -- Dumped from database version 18.3
 -- Dumped by pg_dump version 18.3
@@ -5009,7 +5009,21 @@ ALTER TABLE sis.courses OWNER TO postgres;
 -- Name: TABLE courses; Type: COMMENT; Schema: sis; Owner: postgres
 --
 
-COMMENT ON TABLE sis.courses IS 'The master course record (independent of term). subject + course form the course number (e.g., "ENG 101"). credits, lecture_hours, lab_hours, clinical_hours, and independent_study_hours define the contact hour structure. grading_basis: letter_grade, pass_fail, audit, credit_no_credit. cip_code links to the federal program taxonomy.';
+COMMENT ON TABLE sis.courses IS 'The master course record (independent of term). subject + course form
+the course number (e.g., "ENG 101"). credits, lecture_hours, lab_hours,
+clinical_hours, and independent_study_hours define the contact hour
+structure. grading_basis (sis.grading_basis): graded_letter, pass_fail,
+audit, credit_no_credit. cip_code links to the federal program taxonomy.';
+
+
+--
+-- Name: COLUMN courses.grading_basis; Type: COMMENT; Schema: sis; Owner: postgres
+--
+
+COMMENT ON COLUMN sis.courses.grading_basis IS 'How this course is graded. sis.grading_basis values:
+graded_letter (standard A–F), pass_fail, audit (no grade recorded),
+credit_no_credit. Determines which grading scale applies in the LMS
+grade roster and whether the course counts toward GPA.';
 
 
 --
@@ -8914,7 +8928,14 @@ ALTER TABLE core.tenant_memberships OWNER TO postgres;
 -- Name: TABLE tenant_memberships; Type: COMMENT; Schema: core; Owner: postgres
 --
 
-COMMENT ON TABLE core.tenant_memberships IS 'Joins a user to a tenant, establishing the institutional relationship. system_role is the coarse primary role used in RLS context (student, staff, faculty, tenant_admin, super_admin). institutional_email is the tenant-assigned email address. last_accessed_at supports idle session detection and usage analytics.';
+COMMENT ON TABLE core.tenant_memberships IS 'Links a user to a tenant and assigns their institutional role.
+system_role (core.system_role): super_admin, tenant_admin, faculty,
+student, staff, alumni, guardian, volunteer, user.
+joined_at records the date of first membership. institutional_email
+is the tenant-issued email address (may differ from core.user_emails).
+The unique constraint on (tenant_id, user_id) prevents duplicate
+memberships. RLS on core.users depends on this table — every user
+must have a membership row to be visible within a tenant context.';
 
 
 --
@@ -13996,7 +14017,19 @@ ALTER TABLE sis.academic_terms OWNER TO postgres;
 -- Name: TABLE academic_terms; Type: COMMENT; Schema: sis; Owner: postgres
 --
 
-COMMENT ON TABLE sis.academic_terms IS 'Institutional calendar terms (semesters, quarters, trimesters). alias is the short display label (e.g., "FA26"). status: upcoming → enrollment_open → in_session → grading → closed. start_date and end_date define the instructional period.';
+COMMENT ON TABLE sis.academic_terms IS 'Institutional calendar terms (semesters, quarters, trimesters).
+alias is the short display label (e.g., "FA26").
+Status (sis.term_status): planning → active → archived.
+start_date and end_date define the instructional period.';
+
+
+--
+-- Name: COLUMN academic_terms.status; Type: COMMENT; Schema: sis; Owner: postgres
+--
+
+COMMENT ON COLUMN sis.academic_terms.status IS 'Lifecycle status of the term.
+sis.term_status values: planning (being set up), active (current
+instructional period), archived (completed and closed).';
 
 
 --
@@ -14078,7 +14111,11 @@ COMMENT ON COLUMN sis.student_profiles.gpa_last_calculated_at IS 'Timestamp of t
 -- Name: COLUMN student_profiles.academic_standing_status; Type: COMMENT; Schema: sis; Owner: postgres
 --
 
-COMMENT ON COLUMN sis.student_profiles.academic_standing_status IS 'Current academic standing. Updated by the Rust academic standing service after each end-of-term evaluation. Drives registration eligibility checks and financial aid SAP status.';
+COMMENT ON COLUMN sis.student_profiles.academic_standing_status IS 'Current academic standing. sis.academic_standing_status values:
+good_standing, academic_warning, academic_probation,
+academic_suspension, academic_dismissal, reinstated.
+Updated by the GPA service after each term recalculation and by the
+registrar for administrative standing changes.';
 
 
 --
@@ -14400,7 +14437,10 @@ ALTER TABLE hr.employment_contracts OWNER TO postgres;
 -- Name: TABLE employment_contracts; Type: COMMENT; Schema: hr; Owner: postgres
 --
 
-COMMENT ON TABLE hr.employment_contracts IS 'A formal employment agreement specifying job_title, contract type (full_time, part_time, adjunct, at_will, fixed_term), salary or hourly rate, start/end dates, and the budgeted position being filled. is_active marks the currently effective contract. Historical contracts are retained for audit.';
+COMMENT ON TABLE hr.employment_contracts IS 'A formal employment agreement specifying job_title, contract type
+(salaried, hourly, stipend), salary or hourly rate, start/end dates,
+and the budgeted position being filled. is_active marks the currently
+effective contract. Historical contracts are retained for audit.';
 
 
 --
@@ -14448,7 +14488,11 @@ ALTER TABLE hr.interviews OWNER TO postgres;
 -- Name: TABLE interviews; Type: COMMENT; Schema: hr; Owner: postgres
 --
 
-COMMENT ON TABLE hr.interviews IS 'A scheduled interview session for a job application. interview_type (phone_screen, technical, panel, final) categorizes the stage. Panelists are tracked in interview_panelists. interviewer_notes are accessible only to HR and the hiring committee.';
+COMMENT ON TABLE hr.interviews IS 'A scheduled interview session for a job application.
+interview_type (hr.interview_type): phone_screen, video_call, in_person,
+panel_interview, demo_lesson, technical_exam. Panelists are tracked in
+interview_panelists. interviewer_notes are accessible only to HR and
+the hiring committee.';
 
 
 --
@@ -14474,7 +14518,11 @@ ALTER TABLE hr.job_applications OWNER TO postgres;
 -- Name: TABLE job_applications; Type: COMMENT; Schema: hr; Owner: postgres
 --
 
-COMMENT ON TABLE hr.job_applications IS 'A candidate''s application to a job posting. Supports both external applicants (guests) and internal employees. The unique constraint on (posting, applicant) prevents duplicate applications.';
+COMMENT ON TABLE hr.job_applications IS 'A candidate''s application to a job posting. Supports both external
+applicants (guests) and internal employees. The unique constraint on
+(posting, applicant) prevents duplicate applications.
+status (hr.application_status): new, screening, interviewing,
+reference_check, offered, hired, rejected, withdrawn.';
 
 
 --
@@ -14587,7 +14635,12 @@ ALTER TABLE hr.leave_balances OWNER TO postgres;
 -- Name: TABLE leave_balances; Type: COMMENT; Schema: hr; Owner: postgres
 --
 
-COMMENT ON TABLE hr.leave_balances IS 'Running accrual balance per leave category (vacation, sick, personal, comp_time) per employee. hours_accrued and hours_used are maintained by the HR service as leave is accrued and requests are approved. The unique constraint ensures one balance row per (tenant, employee, category).';
+COMMENT ON TABLE hr.leave_balances IS 'Running accrual balance per leave category per employee.
+Leave categories (hr.leave_category): sick, vacation, personal,
+bereavment, jury_duty, fmla. hours_accrued and hours_used are
+maintained by the HR service as leave is accrued and requests are
+approved. The unique constraint ensures one balance row per
+(tenant, employee, category).';
 
 
 --
@@ -14647,7 +14700,12 @@ ALTER TABLE hr.performance_evaluations OWNER TO postgres;
 -- Name: TABLE performance_evaluations; Type: COMMENT; Schema: hr; Owner: postgres
 --
 
-COMMENT ON TABLE hr.performance_evaluations IS 'An annual or periodic performance review. Links to an lms.rubric defining the scoring criteria. overall_score is computed from rubric criteria scores. employee_comments and evaluator_notes are stored separately. Acknowledged by employee via the workflow signature flow.';
+COMMENT ON TABLE hr.performance_evaluations IS 'An annual or periodic performance review linked to an lms.rubric
+defining the scoring criteria. overall_score is computed from rubric
+criteria scores. employee_comments and evaluator_notes are stored
+separately. status (hr.evaluation_status): draft → under_review →
+acknowledged → appealed. Acknowledged by employee via the workflow
+signature flow.';
 
 
 --
@@ -14774,7 +14832,10 @@ ALTER TABLE hr.timesheets OWNER TO postgres;
 -- Name: TABLE timesheets; Type: COMMENT; Schema: hr; Owner: postgres
 --
 
-COMMENT ON TABLE hr.timesheets IS 'A submitted and approved record of hours worked for a pay period. Linked to the employee''s active employment contract. Status: draft → submitted → approved → rejected. total_hours is validated against the contract''s expected hours.';
+COMMENT ON TABLE hr.timesheets IS 'A submitted and approved record of hours worked for a pay period.
+Linked to the employee''s active employment contract.
+Status: draft → submitted → approved → paid → rejected.
+total_hours is validated against the contract''s expected hours.';
 
 
 --
@@ -19063,7 +19124,13 @@ ALTER TABLE sis.enrollments OWNER TO postgres;
 -- Name: TABLE enrollments; Type: COMMENT; Schema: sis; Owner: postgres
 --
 
-COMMENT ON TABLE sis.enrollments IS 'A student''s registration in a course section for a term. status: enrolled, withdrawn, dropped, auditing, incomplete, no_show. is_title_iv_eligible flags whether this enrollment counts for federal financial aid disbursement. cpos_reason captures the basis for cross-program of study enrollment when applicable. fulfilled_catalog_requirement_id links to the degree requirement this enrollment satisfies.';
+COMMENT ON TABLE sis.enrollments IS 'A student''s registration in a course section for a term.
+status (sis.enrollment_status): enrolled, waitlisted, dropped,
+withdrawn, prereq_drop (automated PQ sweep), admin_drop (registrar
+action), incomplete (grade not yet finalized).
+is_title_iv_eligible flags whether this enrollment counts for federal
+financial aid disbursement. cpos_reason captures the basis for
+cross-program of study enrollment when applicable.';
 
 
 --
@@ -19883,6 +19950,16 @@ COMMENT ON TABLE sis.student_demographics IS 'FERPA-restricted demographic data 
 
 
 --
+-- Name: COLUMN student_demographics.housing_status; Type: COMMENT; Schema: sis; Owner: postgres
+--
+
+COMMENT ON COLUMN sis.student_demographics.housing_status IS 'Student''s housing situation. ops.housing_status values:
+on_campus, off_campus, with_family, unhoused.
+Used for student services outreach and housing stability reporting.
+NULL means not reported.';
+
+
+--
 -- Name: COLUMN student_demographics.effective_start_date; Type: COMMENT; Schema: sis; Owner: postgres
 --
 
@@ -19996,14 +20073,29 @@ ALTER TABLE sis.student_programs OWNER TO postgres;
 -- Name: TABLE student_programs; Type: COMMENT; Schema: sis; Owner: postgres
 --
 
-COMMENT ON TABLE sis.student_programs IS 'A student''s declared academic program(s). A student may have multiple active programs (double major, major+minor). is_primary marks the primary program for SAP and financial aid calculation. priority orders multiple programs. status: declared → active → completed → withdrawn.';
+COMMENT ON TABLE sis.student_programs IS 'A student''s declared academic program(s). A student may have multiple
+active programs (double major, major+minor). is_primary marks the
+primary program for SAP and financial aid calculation. priority orders
+multiple programs. status (sis.student_program_status): declared →
+active → completed | withdrawn | administratively_withdrawn |
+on_leave | transfer_out.';
 
 
 --
 -- Name: COLUMN student_programs.status; Type: COMMENT; Schema: sis; Owner: postgres
 --
 
-COMMENT ON COLUMN sis.student_programs.status IS 'Lifecycle status of this program declaration. active is the normal operational state. completed is set when a credential is awarded. CPOS sweep uses this column to determine which program''s requirements govern a student''s Title IV eligible courses.';
+COMMENT ON COLUMN sis.student_programs.status IS 'Lifecycle status of this program declaration.
+sis.student_program_status values:
+  declared              — program recorded, not yet activated
+  active                — normal operational state
+  completed             — credential awarded
+  withdrawn             — student-initiated withdrawal
+  administratively_withdrawn — institution-initiated removal
+  on_leave              — student on approved leave
+  transfer_out          — student transferred to another institution
+CPOS sweep uses this column to determine which program''s requirements
+govern a student''s Title IV eligible courses.';
 
 
 --
@@ -52370,6 +52462,55 @@ ALTER TABLE auth_governance.token_families ENABLE ROW LEVEL SECURITY;
 ALTER TABLE board.agendas ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: agendas app_access; Type: POLICY; Schema: board; Owner: postgres
+--
+
+CREATE POLICY app_access ON board.agendas TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attachments app_access; Type: POLICY; Schema: board; Owner: postgres
+--
+
+CREATE POLICY app_access ON board.attachments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: committees app_access; Type: POLICY; Schema: board; Owner: postgres
+--
+
+CREATE POLICY app_access ON board.committees TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: meetings app_access; Type: POLICY; Schema: board; Owner: postgres
+--
+
+CREATE POLICY app_access ON board.meetings TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: members app_access; Type: POLICY; Schema: board; Owner: postgres
+--
+
+CREATE POLICY app_access ON board.members TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: public_comments app_access; Type: POLICY; Schema: board; Owner: postgres
+--
+
+CREATE POLICY app_access ON board.public_comments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: votes app_access; Type: POLICY; Schema: board; Owner: postgres
+--
+
+CREATE POLICY app_access ON board.votes TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: attachments; Type: ROW SECURITY; Schema: board; Owner: postgres
 --
 
@@ -52455,6 +52596,41 @@ CREATE POLICY tenant_isolation_policy ON board.votes AS RESTRICTIVE USING ((tena
 ALTER TABLE board.votes ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: course_listings app_access; Type: POLICY; Schema: catalog; Owner: postgres
+--
+
+CREATE POLICY app_access ON catalog.course_listings TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: curriculum_proposals app_access; Type: POLICY; Schema: catalog; Owner: postgres
+--
+
+CREATE POLICY app_access ON catalog.curriculum_proposals TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: editions app_access; Type: POLICY; Schema: catalog; Owner: postgres
+--
+
+CREATE POLICY app_access ON catalog.editions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: program_listings app_access; Type: POLICY; Schema: catalog; Owner: postgres
+--
+
+CREATE POLICY app_access ON catalog.program_listings TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: sections app_access; Type: POLICY; Schema: catalog; Owner: postgres
+--
+
+CREATE POLICY app_access ON catalog.sections TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: course_listings; Type: ROW SECURITY; Schema: catalog; Owner: postgres
 --
 
@@ -52517,6 +52693,97 @@ CREATE POLICY tenant_isolation_policy ON catalog.program_listings AS RESTRICTIVE
 --
 
 CREATE POLICY tenant_isolation_policy ON catalog.sections AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: content_blocks app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.content_blocks TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: form_submissions app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.form_submissions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: forms app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.forms TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: media_asset_subjects app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.media_asset_subjects TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: media_assets app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.media_assets TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: navigation_menus app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.navigation_menus TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: page_subjects app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.page_subjects TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: page_tags app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.page_tags TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: page_versions app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.page_versions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: pages app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.pages TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: sites app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.sites TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tags app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.tags TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: url_redirects app_access; Type: POLICY; Schema: cms; Owner: postgres
+--
+
+CREATE POLICY app_access ON cms.url_redirects TO edusuite_app USING (true) WITH CHECK (true);
 
 
 --
@@ -52702,6 +52969,69 @@ CREATE POLICY tenant_isolation_policy ON cms.url_redirects AS RESTRICTIVE USING 
 ALTER TABLE cms.url_redirects ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: milestones app_access; Type: POLICY; Schema: collab; Owner: postgres
+--
+
+CREATE POLICY app_access ON collab.milestones TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: sprints app_access; Type: POLICY; Schema: collab; Owner: postgres
+--
+
+CREATE POLICY app_access ON collab.sprints TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: task_comments app_access; Type: POLICY; Schema: collab; Owner: postgres
+--
+
+CREATE POLICY app_access ON collab.task_comments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: task_dependencies app_access; Type: POLICY; Schema: collab; Owner: postgres
+--
+
+CREATE POLICY app_access ON collab.task_dependencies TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: task_lms_links app_access; Type: POLICY; Schema: collab; Owner: postgres
+--
+
+CREATE POLICY app_access ON collab.task_lms_links TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tasks app_access; Type: POLICY; Schema: collab; Owner: postgres
+--
+
+CREATE POLICY app_access ON collab.tasks TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: time_logs app_access; Type: POLICY; Schema: collab; Owner: postgres
+--
+
+CREATE POLICY app_access ON collab.time_logs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: workspace_members app_access; Type: POLICY; Schema: collab; Owner: postgres
+--
+
+CREATE POLICY app_access ON collab.workspace_members TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: workspaces app_access; Type: POLICY; Schema: collab; Owner: postgres
+--
+
+CREATE POLICY app_access ON collab.workspaces TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: milestones; Type: ROW SECURITY; Schema: collab; Owner: postgres
 --
 
@@ -52817,6 +53147,76 @@ ALTER TABLE collab.workspace_members ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE collab.workspaces ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: delivery_events app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.delivery_events TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: journey_steps app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.journey_steps TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: journeys app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.journeys TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: logs app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.logs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: templates app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.templates TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: user_devices app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.user_devices TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: user_preferences app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.user_preferences TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: webhook_delivery_logs app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.webhook_delivery_logs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: webhook_endpoints app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.webhook_endpoints TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: webhook_subscriptions app_access; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY app_access ON comms.webhook_subscriptions TO edusuite_app USING (true) WITH CHECK (true);
+
 
 --
 -- Name: user_devices cross_tenant_user_devices; Type: POLICY; Schema: comms; Owner: postgres
@@ -53325,6 +53725,139 @@ ALTER TABLE core.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE core.webhook_endpoints ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: alumni_chapters app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.alumni_chapters TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: alumni_profiles app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.alumni_profiles TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: application_requirements app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.application_requirements TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: application_reviews app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.application_reviews TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: applications app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.applications TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: chapter_members app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.chapter_members TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: constituent_interactions app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.constituent_interactions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: donor_pledges app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.donor_pledges TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: event_registrations app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.event_registrations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: fundraising_campaigns app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.fundraising_campaigns TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: gifts app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.gifts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: matriculation_batches app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.matriculation_batches TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: mentorship_matches app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.mentorship_matches TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: onboarding_template_tasks app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.onboarding_template_tasks TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: onboarding_templates app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.onboarding_templates TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: prospect_journey_states app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.prospect_journey_states TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: prospect_profiles app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.prospect_profiles TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: recruitment_events app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.recruitment_events TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_onboarding_tasks app_access; Type: POLICY; Schema: crm; Owner: postgres
+--
+
+CREATE POLICY app_access ON crm.student_onboarding_tasks TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: application_requirements; Type: ROW SECURITY; Schema: crm; Owner: postgres
 --
 
@@ -53473,6 +54006,97 @@ CREATE POLICY tenant_isolation_policy ON crm.student_onboarding_tasks AS RESTRIC
 --
 
 ALTER TABLE data_governance.anonymisation_jobs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: breach_affected_subjects app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.breach_affected_subjects TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: breach_incidents app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.breach_incidents TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: consent_records app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.consent_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: consent_types app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.consent_types TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: data_disclosures app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.data_disclosures TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: data_sharing_agreements app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.data_sharing_agreements TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: data_subject_requests app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.data_subject_requests TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: destruction_records app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.destruction_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: pii_field_registry app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.pii_field_registry TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: privacy_impact_assessments app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.privacy_impact_assessments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: retention_holds app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.retention_holds TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: retention_schedules app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.retention_schedules TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tenant_regulations app_access; Type: POLICY; Schema: data_governance; Owner: postgres
+--
+
+CREATE POLICY app_access ON data_governance.tenant_regulations TO edusuite_app USING (true) WITH CHECK (true);
+
 
 --
 -- Name: breach_affected_subjects; Type: ROW SECURITY; Schema: data_governance; Owner: postgres
@@ -53768,6 +54392,55 @@ CREATE POLICY tenant_isolation_policy ON data_governance.tenant_regulations AS R
 ALTER TABLE data_governance.tenant_regulations ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: document_acls app_access; Type: POLICY; Schema: dms; Owner: postgres
+--
+
+CREATE POLICY app_access ON dms.document_acls TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: document_links app_access; Type: POLICY; Schema: dms; Owner: postgres
+--
+
+CREATE POLICY app_access ON dms.document_links TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: document_versions app_access; Type: POLICY; Schema: dms; Owner: postgres
+--
+
+CREATE POLICY app_access ON dms.document_versions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: documents app_access; Type: POLICY; Schema: dms; Owner: postgres
+--
+
+CREATE POLICY app_access ON dms.documents TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: folder_acls app_access; Type: POLICY; Schema: dms; Owner: postgres
+--
+
+CREATE POLICY app_access ON dms.folder_acls TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: folders app_access; Type: POLICY; Schema: dms; Owner: postgres
+--
+
+CREATE POLICY app_access ON dms.folders TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: retention_policies app_access; Type: POLICY; Schema: dms; Owner: postgres
+--
+
+CREATE POLICY app_access ON dms.retention_policies TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: document_acls; Type: ROW SECURITY; Schema: dms; Owner: postgres
 --
 
@@ -53859,6 +54532,132 @@ CREATE POLICY tenant_isolation_policy ON dms.retention_policies AS RESTRICTIVE U
 
 
 --
+-- Name: dead_letters app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.dead_letters TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: event_types app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.event_types TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2026m04 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2026m04 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2026m05 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2026m05 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2026m06 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2026m06 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2026m07 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2026m07 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2026m08 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2026m08 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2026m09 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2026m09 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2026m10 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2026m10 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2026m11 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2026m11 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2026m12 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2026m12 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2027m01 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2027m01 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2027m02 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2027m02 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: outbox_y2027m03 app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.outbox_y2027m03 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: saga_instances app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.saga_instances TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: saga_steps app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.saga_steps TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: subscriptions app_access; Type: POLICY; Schema: event_bus; Owner: postgres
+--
+
+CREATE POLICY app_access ON event_bus.subscriptions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: dead_letters; Type: ROW SECURITY; Schema: event_bus; Owner: postgres
 --
 
@@ -53915,6 +54714,405 @@ CREATE POLICY tenant_isolation_policy ON event_bus.saga_steps AS RESTRICTIVE USI
 --
 
 ALTER TABLE finance.accounting_configurations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: accounting_configurations app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.accounting_configurations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: ar_invoices app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.ar_invoices TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: ar_payments app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.ar_payments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: asset_depreciation_schedules app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.asset_depreciation_schedules TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: bank_accounts app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.bank_accounts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: bank_reconciliations app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.bank_reconciliations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: budget_lines app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.budget_lines TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: budget_transfers app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.budget_transfers TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: charts_of_accounts app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.charts_of_accounts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: currency_exchange_rates app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.currency_exchange_rates TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: deferred_revenue app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.deferred_revenue TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: depreciation_runs app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.depreciation_runs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: economic_nexus_monitoring app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.economic_nexus_monitoring TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: endowment_fund_records app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.endowment_fund_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: expense_line_items app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.expense_line_items TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: expense_reports app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.expense_reports TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: fafsa_records app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.fafsa_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: financial_aid_awards app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.financial_aid_awards TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: fiscal_years app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.fiscal_years TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: fixed_assets app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.fixed_assets TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: funds app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.funds TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: gl_accounts app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.gl_accounts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: grant_budgets app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.grant_budgets TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: inter_fund_transfers app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.inter_fund_transfers TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: journal_entries app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.journal_entries TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: journal_lines app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.journal_lines TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: ledger_accounts app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.ledger_accounts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: nslds_reporting_runs app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.nslds_reporting_runs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: pay_stub_line_items app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.pay_stub_line_items TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: pay_stubs app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.pay_stubs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: payroll_item_types app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.payroll_item_types TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: payroll_runs app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.payroll_runs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: purchase_orders app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.purchase_orders TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: receiving_reports app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.receiving_reports TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: sap_appeals app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.sap_appeals TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: sap_evaluation_runs app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.sap_evaluation_runs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: sap_evaluations app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.sap_evaluations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: sap_policies app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.sap_policies TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: sponsored_grants app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.sponsored_grants TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_accounts app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.student_accounts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_transactions app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.student_transactions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tax_1099_records app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.tax_1099_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tax_filing_periods app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.tax_filing_periods TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tax_jurisdictions app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.tax_jurisdictions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tax_nexus app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.tax_nexus TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tax_product_rules app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.tax_product_rules TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tax_rates app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.tax_rates TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: tenant_tax_registrations app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.tenant_tax_registrations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: transaction_tax_lines app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.transaction_tax_lines TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: travel_authorizations app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.travel_authorizations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: trial_balance_snapshots app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.trial_balance_snapshots TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: va_certifications app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.va_certifications TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: vendor_invoices app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.vendor_invoices TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: vendor_payments app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.vendor_payments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: vendor_tax_details app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.vendor_tax_details TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: vendors app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.vendors TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: veteran_profiles app_access; Type: POLICY; Schema: finance; Owner: postgres
+--
+
+CREATE POLICY app_access ON finance.veteran_profiles TO edusuite_app USING (true) WITH CHECK (true);
+
 
 --
 -- Name: ar_invoices; Type: ROW SECURITY; Schema: finance; Owner: postgres
@@ -54613,6 +55811,125 @@ ALTER TABLE finance.vendors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE finance.veteran_profiles ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: budgeted_positions app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.budgeted_positions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: employee_supervisors app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.employee_supervisors TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: employment_contracts app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.employment_contracts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: interview_panelists app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.interview_panelists TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: interviews app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.interviews TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: job_applications app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.job_applications TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: job_offers app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.job_offers TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: job_postings app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.job_postings TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: job_requisitions app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.job_requisitions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: leave_balances app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.leave_balances TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: leave_requests app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.leave_requests TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: performance_evaluations app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.performance_evaluations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: salary_grid_nodes app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.salary_grid_nodes TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: salary_grids app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.salary_grids TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: staff_credentials app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.staff_credentials TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: staff_profiles app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.staff_profiles TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: timesheets app_access; Type: POLICY; Schema: hr; Owner: postgres
+--
+
+CREATE POLICY app_access ON hr.timesheets TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: budgeted_positions; Type: ROW SECURITY; Schema: hr; Owner: postgres
 --
 
@@ -54818,6 +56135,503 @@ ALTER TABLE hr.timesheets ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE lms.answer_choices ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: announcements app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.announcements TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: answer_choices app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.answer_choices TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assessment_accommodations app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assessment_accommodations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assessment_analytics_snapshots app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assessment_analytics_snapshots TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assessment_attempts app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assessment_attempts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assessment_items app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assessment_items TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assessment_pools app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assessment_pools TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assessment_sections app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assessment_sections TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assessments app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assessments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assignment_groups app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assignment_groups TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assignment_standards app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assignment_standards TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assignments app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.assignments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_events app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_events TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_events_y2026m05 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_events_y2026m05 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_events_y2026m06 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_events_y2026m06 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_events_y2026m07 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_events_y2026m07 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_events_y2026m08 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_events_y2026m08 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_events_y2026m09 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_events_y2026m09 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_events_y2026m10 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_events_y2026m10 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_proctoring_sessions app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_proctoring_sessions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_responses app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_responses TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attempt_score_breakdowns app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.attempt_score_breakdowns TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: caliper_events app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.caliper_events TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: caliper_events_y2026m05 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.caliper_events_y2026m05 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: caliper_events_y2026m06 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.caliper_events_y2026m06 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: caliper_events_y2026m07 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.caliper_events_y2026m07 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: caliper_events_y2026m08 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.caliper_events_y2026m08 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: caliper_events_y2026m09 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.caliper_events_y2026m09 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: caliper_events_y2026m10 app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.caliper_events_y2026m10 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: conversation_participants app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.conversation_participants TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: conversations app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.conversations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: course_modules app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.course_modules TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: discussion_posts app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.discussion_posts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: discussion_topics app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.discussion_topics TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: grade_history app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.grade_history TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: grade_roster_entries app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.grade_roster_entries TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: grade_roster_submissions app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.grade_roster_submissions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: grades app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.grades TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: grading_scale_entries app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.grading_scale_entries TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: grading_scales app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.grading_scales TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: group_sets app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.group_sets TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: item_statistics app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.item_statistics TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: learning_packages app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.learning_packages TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: learning_standards app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.learning_standards TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: lti_deployments app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.lti_deployments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: lti_launches app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.lti_launches TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: lti_registered_tools app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.lti_registered_tools TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: lti_resource_links app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.lti_resource_links TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: lti_score_passbacks app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.lti_score_passbacks TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: lti_tools app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.lti_tools TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: messages app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.messages TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: originality_reports app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.originality_reports TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: question_bank_members app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.question_bank_members TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: question_banks app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.question_banks TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: question_standards app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.question_standards TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: question_tags app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.question_tags TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: question_versions app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.question_versions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: questions app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.questions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: rubric_criteria app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.rubric_criteria TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: rubric_criterion_scores app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.rubric_criterion_scores TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: rubrics app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.rubrics TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: scorm_tracking app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.scorm_tracking TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: section_grade_summaries app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.section_grade_summaries TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: section_grading_config app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.section_grading_config TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_accommodations app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.student_accommodations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_group_members app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.student_group_members TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_groups app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.student_groups TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_mastery_records app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.student_mastery_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: submissions app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.submissions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: xapi_statements app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.xapi_statements TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: xapi_states app_access; Type: POLICY; Schema: lms; Owner: postgres
+--
+
+CREATE POLICY app_access ON lms.xapi_states TO edusuite_app USING (true) WITH CHECK (true);
+
 
 --
 -- Name: assessment_accommodations; Type: ROW SECURITY; Schema: lms; Owner: postgres
@@ -55478,6 +57292,209 @@ ALTER TABLE lms.xapi_statements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lms.xapi_states ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: asset_categories app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.asset_categories TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: assets app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.assets TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: buildings app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.buildings TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: campus_events app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.campus_events TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: campuses app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.campuses TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: event_ticket_types app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.event_ticket_types TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: event_tickets app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.event_tickets TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: housing_applications app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.housing_applications TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: meter_readings app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.meter_readings TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: pm_schedules app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.pm_schedules TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: reservations app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.reservations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: residential_rooms app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.residential_rooms TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: retail_order_items app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.retail_order_items TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: retail_orders app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.retail_orders TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: retail_products app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.retail_products TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: retail_storefronts app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.retail_storefronts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: rooms app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.rooms TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_route_assignments app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.student_route_assignments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: transit_route_stops app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.transit_route_stops TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: transit_routes app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.transit_routes TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: transit_stops app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.transit_stops TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: utility_accounts app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.utility_accounts TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: utility_bills app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.utility_bills TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: utility_meters app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.utility_meters TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: vehicle_inspections app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.vehicle_inspections TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: vehicle_odometer_logs app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.vehicle_odometer_logs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: vehicle_service_records app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.vehicle_service_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: vehicles app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.vehicles TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: work_orders app_access; Type: POLICY; Schema: ops; Owner: postgres
+--
+
+CREATE POLICY app_access ON ops.work_orders TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: asset_categories; Type: ROW SECURITY; Schema: ops; Owner: postgres
 --
 
@@ -55829,6 +57846,55 @@ ALTER TABLE ops.vehicles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ops.work_orders ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: attestation_campaigns app_access; Type: POLICY; Schema: policy; Owner: postgres
+--
+
+CREATE POLICY app_access ON policy.attestation_campaigns TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: categories app_access; Type: POLICY; Schema: policy; Owner: postgres
+--
+
+CREATE POLICY app_access ON policy.categories TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: documents app_access; Type: POLICY; Schema: policy; Owner: postgres
+--
+
+CREATE POLICY app_access ON policy.documents TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: manuals app_access; Type: POLICY; Schema: policy; Owner: postgres
+--
+
+CREATE POLICY app_access ON policy.manuals TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: review_logs app_access; Type: POLICY; Schema: policy; Owner: postgres
+--
+
+CREATE POLICY app_access ON policy.review_logs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: user_acknowledgements app_access; Type: POLICY; Schema: policy; Owner: postgres
+--
+
+CREATE POLICY app_access ON policy.user_acknowledgements TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: versions app_access; Type: POLICY; Schema: policy; Owner: postgres
+--
+
+CREATE POLICY app_access ON policy.versions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: attestation_campaigns; Type: ROW SECURITY; Schema: policy; Owner: postgres
 --
 
@@ -55920,6 +57986,97 @@ ALTER TABLE policy.user_acknowledgements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE policy.versions ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: accreditors app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.accreditors TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: address_formats app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.address_formats TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: cip_codes app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.cip_codes TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: countries app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.countries TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: external_organizations app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.external_organizations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: ficm_codes app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.ficm_codes TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: ipeds_race_ethnicity app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.ipeds_race_ethnicity TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: languages app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.languages TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: ncaa_sports app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.ncaa_sports TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: postal_codes app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.postal_codes TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: standardized_tests app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.standardized_tests TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: subdivisions app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.subdivisions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: timezones app_access; Type: POLICY; Schema: reference; Owner: postgres
+--
+
+CREATE POLICY app_access ON reference.timezones TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: academic_programs; Type: ROW SECURITY; Schema: sis; Owner: postgres
 --
 
@@ -55936,6 +58093,412 @@ ALTER TABLE sis.academic_standing_policies ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE sis.academic_terms ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: academic_programs app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.academic_programs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: academic_standing_policies app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.academic_standing_policies TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: academic_terms app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.academic_terms TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: advising_appointments app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.advising_appointments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: articulation_rules app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.articulation_rules TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: athlete_term_records app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.athlete_term_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: athletic_teams app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.athletic_teams TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: attendance_records app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.attendance_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: awarded_credential_majors app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.awarded_credential_majors TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: awarded_credentials app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.awarded_credentials TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: corequisite_rules app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.corequisite_rules TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: course_attributes app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.course_attributes TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: course_repeat_policies app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.course_repeat_policies TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: course_sections app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.course_sections TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: courses app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.courses TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: cpos_overrides app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.cpos_overrides TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: cpos_program_rules app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.cpos_program_rules TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: cpos_sweep_results app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.cpos_sweep_results TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: cpos_sweep_runs app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.cpos_sweep_runs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: credential_types app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.credential_types TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: disciplinary_incidents app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.disciplinary_incidents TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: enrollments app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.enrollments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: external_courses app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.external_courses TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: external_grade_entries app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.external_grade_entries TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: external_grading_scales app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.external_grading_scales TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: external_institution_scale_assignments app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.external_institution_scale_assignments TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: external_institutions app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.external_institutions TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: gpa_recalculation_runs app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.gpa_recalculation_runs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: grade_crosswalks app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.grade_crosswalks TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: graduation_applications app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.graduation_applications TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: intervention_cases app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.intervention_cases TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: materials_catalog app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.materials_catalog TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: ncaa_academic_evaluations app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.ncaa_academic_evaluations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: nsc_submission_logs app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.nsc_submission_logs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: prerequisite_groups app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.prerequisite_groups TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: prerequisite_overrides app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.prerequisite_overrides TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: prerequisite_requirements app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.prerequisite_requirements TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: prerequisite_sweep_results app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.prerequisite_sweep_results TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: prerequisite_sweep_runs app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.prerequisite_sweep_runs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: program_accreditations app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.program_accreditations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: repeat_rule_overrides app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.repeat_rule_overrides TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: section_materials app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.section_materials TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: section_meeting_times app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.section_meeting_times TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: section_syllabi app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.section_syllabi TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_academic_standing app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_academic_standing TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_athletes app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_athletes TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_course_plans app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_course_plans TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_demographics app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_demographics TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_documents app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_documents TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_external_terms app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_external_terms TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_profiles app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_profiles TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_programs app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_programs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_risk_profiles app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_risk_profiles TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: student_timeframe_snapshots app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.student_timeframe_snapshots TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: transcript_records app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.transcript_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: transfer_course_records app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.transfer_course_records TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: transfer_evaluations app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.transfer_evaluations TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: transfer_grade_policies app_access; Type: POLICY; Schema: sis; Owner: postgres
+--
+
+CREATE POLICY app_access ON sis.transfer_grade_policies TO edusuite_app USING (true) WITH CHECK (true);
+
 
 --
 -- Name: articulation_rules; Type: ROW SECURITY; Schema: sis; Owner: postgres
@@ -56653,6 +59216,48 @@ ALTER TABLE sis.transfer_evaluations ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE sis.transfer_grade_policies ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: esignatures app_access; Type: POLICY; Schema: workflow; Owner: postgres
+--
+
+CREATE POLICY app_access ON workflow.esignatures TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: form_stages app_access; Type: POLICY; Schema: workflow; Owner: postgres
+--
+
+CREATE POLICY app_access ON workflow.form_stages TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: forms app_access; Type: POLICY; Schema: workflow; Owner: postgres
+--
+
+CREATE POLICY app_access ON workflow.forms TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: routing_logs app_access; Type: POLICY; Schema: workflow; Owner: postgres
+--
+
+CREATE POLICY app_access ON workflow.routing_logs TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: steps app_access; Type: POLICY; Schema: workflow; Owner: postgres
+--
+
+CREATE POLICY app_access ON workflow.steps TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: submissions app_access; Type: POLICY; Schema: workflow; Owner: postgres
+--
+
+CREATE POLICY app_access ON workflow.submissions TO edusuite_app USING (true) WITH CHECK (true);
+
 
 --
 -- Name: esignatures; Type: ROW SECURITY; Schema: workflow; Owner: postgres
@@ -66206,5 +68811,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA workflow GRANT SELECT,INSER
 -- PostgreSQL database dump complete
 --
 
-\unrestrict edhbKPB3S7JZrF5eXQERsefe6D5hVXbABsfllfj1ficeUQx3Soi4MDugzfE5Opx
+\unrestrict kPfkiHjXttdkaQXJ67SstcVIU3tCLC4pJySOWkbC0ijJb4O2c0b4HEhKdBgNavb
 
