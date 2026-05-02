@@ -5,6 +5,7 @@
 // sqlx maps them directly to f64 — consistent with the sis/hr/lms pattern.
 // Custom PG enums are cast to ::text in SELECT lists.
 
+use chrono::NaiveDate;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -825,18 +826,24 @@ pub async fn get_sap_appeal(
     evaluation_id: Uuid,
 ) -> Result<Option<SapAppeal>, AppError> {
 
+    // Actual finance.sap_appeals columns:
+    //   id, tenant_id, student_id, sap_evaluation_id, workflow_submission_id,
+    //   supporting_document_id, appeal_status, probation_expires_term_id, created_at
     let row = sqlx::query!(
         r#"
         SELECT
-            sa.id, sa.sap_evaluation_id, se.student_id,
-            sa.appeal_reason, sa.supporting_documents,
-            sa.status, sa.reviewer_id, sa.reviewer_notes,
-            sa.reviewed_at, sa.probation_expires_term_id,
-            sa.created_at, sa.updated_at
+            sa.id,
+            sa.sap_evaluation_id,
+            sa.student_id,
+            sa.workflow_submission_id,
+            sa.supporting_document_id,
+            sa.appeal_status,
+            sa.probation_expires_term_id,
+            sa.created_at
         FROM finance.sap_appeals sa
         JOIN finance.sap_evaluations se ON se.id = sa.sap_evaluation_id
         WHERE sa.sap_evaluation_id = $1
-          AND se.student_id        = $2
+          AND sa.student_id        = $2
           AND sa.tenant_id         = current_setting('app.current_tenant_id', true)::uuid
         "#,
         evaluation_id,
@@ -847,18 +854,14 @@ pub async fn get_sap_appeal(
     .map_err(AppError::from)?;
 
     Ok(row.map(|r| SapAppeal {
-        id:                    r.id,
-        sap_evaluation_id:     r.sap_evaluation_id,
-        student_id:            r.student_id,
-        appeal_reason:         r.appeal_reason,
-        supporting_documents:  r.supporting_documents,
-        status:                r.status,
-        reviewer_id:           r.reviewer_id,
-        reviewer_notes:        r.reviewer_notes,
-        reviewed_at:           r.reviewed_at,
+        id:                        r.id,
+        sap_evaluation_id:         r.sap_evaluation_id,
+        student_id:                r.student_id,
+        workflow_submission_id:    r.workflow_submission_id,
+        supporting_document_id:    r.supporting_document_id,
+        appeal_status:             r.appeal_status,
         probation_expires_term_id: r.probation_expires_term_id,
-        created_at:            r.created_at,
-        updated_at:            r.updated_at,
+        created_at:                r.created_at,
     }))
 }
 

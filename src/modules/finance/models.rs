@@ -258,18 +258,14 @@ pub struct SapEvaluationListResponse {
 /// A SAP appeal filed by a student against a failing evaluation.
 #[derive(Debug, Serialize)]
 pub struct SapAppeal {
-    pub id:                  Uuid,
-    pub sap_evaluation_id:   Uuid,
-    pub student_id:          Uuid,
-    pub appeal_reason:       String,
-    pub supporting_documents: Option<serde_json::Value>,
-    pub status:              String,
-    pub reviewer_id:         Option<Uuid>,
-    pub reviewer_notes:      Option<String>,
-    pub reviewed_at:         Option<DateTime<Utc>>,
+    pub id:                        Uuid,
+    pub sap_evaluation_id:         Uuid,
+    pub student_id:                Uuid,
+    pub workflow_submission_id:    Uuid,
+    pub supporting_document_id:    Option<Uuid>,
+    pub appeal_status:             String,
     pub probation_expires_term_id: Option<Uuid>,
-    pub created_at:          DateTime<Utc>,
-    pub updated_at:          DateTime<Utc>,
+    pub created_at:                DateTime<Utc>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
