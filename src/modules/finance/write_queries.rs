@@ -69,27 +69,29 @@ pub async fn create_student_account(
 
     // ── 2. INSERT finance.student_accounts ───────────────────────────────
     // 23505 on (tenant_id, student_id) unique constraint → Conflict.
-    let row = sqlx::query!(
+    // UNTYPED: f64 cannot bind directly to NUMERIC; cast $3 to ::numeric in SQL.
+    use sqlx::Row as _;
+    let row = sqlx::query(
         r#"
         INSERT INTO finance.student_accounts
             (tenant_id, student_id, current_balance, is_hold_active)
-        VALUES ($1, $2, $3, false)
-        RETURNING id, current_balance::float8 AS "balance!", is_hold_active, created_at
+        VALUES ($1, $2, $3::numeric, false)
+        RETURNING id, current_balance::float8 AS balance, is_hold_active, created_at
         "#,
-        tenant_id,
-        student_id,
-        opening_balance,
     )
+    .bind(tenant_id)
+    .bind(student_id)
+    .bind(opening_balance)
     .fetch_one(&mut **tx)
     .await
     .map_err(AppError::from)?;
 
     Ok(CreateStudentAccountResponse {
-        account_id:      row.id,
+        account_id:      row.try_get("id").map_err(AppError::from)?,
         student_id,
-        current_balance: row.balance,
-        is_hold_active:  row.is_hold_active,
-        created_at:      row.created_at,
+        current_balance: row.try_get("balance").map_err(AppError::from)?,
+        is_hold_active:  row.try_get("is_hold_active").map_err(AppError::from)?,
+        created_at:      row.try_get("created_at").map_err(AppError::from)?,
     })
 }
 
@@ -233,19 +235,20 @@ pub async fn post_transaction(
     // current_balance = current_balance + amount
     //   Charges (positive amount) increase what the student owes.
     //   Payments/credits (negative amount) decrease it.
-    let updated = sqlx::query!(
+    // UNTYPED: f64 (req.amount) cannot bind directly to NUMERIC.
+    let updated = sqlx::query(
         r#"
         UPDATE finance.student_accounts
-           SET current_balance = current_balance + $2,
+           SET current_balance = current_balance + $2::numeric,
                updated_at      = now()
          WHERE id        = $1
            AND tenant_id = $3
-        RETURNING current_balance::float8 AS "updated_balance!"
+        RETURNING current_balance::float8 AS updated_balance
         "#,
-        account_id,
-        req.amount,
-        tenant_id,
     )
+    .bind(account_id)
+    .bind(req.amount)
+    .bind(tenant_id)
     .fetch_one(&mut **tx)
     .await
     .map_err(AppError::from)?;
@@ -257,7 +260,7 @@ pub async fn post_transaction(
         transaction_id = %transaction_id,
         transaction_type = %req.transaction_type,
         amount         = req.amount,
-        updated_balance = updated.updated_balance,
+        updated_balance = updated.try_get::<f64, _>("updated_balance").unwrap_or(0.0),
         "Student transaction posted"
     );
 
@@ -271,7 +274,7 @@ pub async fn post_transaction(
         gl_account_id:     req.gl_account_id,
         term_id:           req.term_id,
         transaction_date,
-        updated_balance:   updated.updated_balance,
+        updated_balance:   updated.try_get::<f64, _>("updated_balance").unwrap_or(0.0),
     })
 }
 
