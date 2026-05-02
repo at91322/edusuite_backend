@@ -1,0 +1,2750 @@
+{
+  "info": {
+    "name": "EduSuite API — Finance Module",
+    "description": "Test suite for all Finance module endpoints.\n\n## Prerequisites\n1. Apply the finance seed block from `db/setup/04_seed_data.sql` — it adds a GL account (`fa000000...001`) and fiscal year (`fb000000...001`) for Hogwarts. Folder 01 **will fail** without this.\n2. Run folders in order — each one cascades IDs to the next.\n\n## Idempotency\nAccount creation (folder 02) accepts both 201 and 409, so the collection can be re-run against a database that already has data.\n\n## What needs real seed data to test happy paths\n- **SAP appeals** — requires a failing evaluation. Only guard paths (400/404) are tested.\n- **VA certifications** — requires a `veteran_profiles` row. Only guard paths tested. Insert a row for Ron to test the full flow.\n- **Payroll** — requires payroll runs to exist. List endpoints return empty arrays on a fresh DB.\n\n## Tenant\nAll requests use **Hogwarts School** (`hogwarts.edu`) — `admin_hogwarts` / `password`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "gl_ar_account_id",
+      "value": "fa000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "fiscal_year_id",
+      "value": "fb000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "hogwarts_tenant_id",
+      "value": "a0000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "student_ron_id",
+      "value": "f2000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "student_neville_id",
+      "value": "f2000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "student_luna_id",
+      "value": "f2000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "staff_dumbledore_id",
+      "value": "f1000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "staff_snape_id",
+      "value": "f1000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "term_fall2024_id",
+      "value": "f3000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "term_spring2025_id",
+      "value": "f3000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "student_account_ron_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "student_account_luna_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transaction_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "aid_award_pell_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "aid_award_loan_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 — Auth",
+      "item": [
+        {
+          "name": "Login (Hogwarts admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has access_token', () => pm.expect(b.access_token).to.be.a('string'));",
+                  "pm.collectionVariables.set('access_token',  b.access_token);",
+                  "pm.collectionVariables.set('refresh_token', b.refresh_token);",
+                  "console.log('✅ Logged in — finance test suite starting');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin_hogwarts\",\n  \"password\": \"password\",\n  \"domain\": \"hogwarts.edu\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — Reference (Fiscal Years & GL Accounts)",
+      "item": [
+        {
+          "name": "GET /finance/gl-accounts — verify AR account seeded",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(b.data).to.be.an('array'));",
+                  "const arAccount = b.data.find(a => a.id === 'fa000000-0000-0000-0000-000000000001');",
+                  "pm.test('Seeded AR account exists (fa000000...001)', () => {",
+                  "  pm.expect(arAccount).to.exist;",
+                  "  pm.expect(arAccount.account_number).to.eql('1200');",
+                  "  pm.expect(arAccount.account_name).to.eql('Student Accounts Receivable');",
+                  "  pm.expect(arAccount.is_active).to.eql(true);",
+                  "});",
+                  "console.log('✅ GL AR account confirmed:', arAccount ? arAccount.account_name : 'NOT FOUND');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/gl-accounts?is_active=true&per_page=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "gl-accounts?is_active=true&per_page=50"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /finance/gl-accounts?account_type=asset — filter check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Returns assets only', () => {",
+                  "  b.data.forEach(a => pm.expect(a.account_type).to.eql('asset'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/gl-accounts?account_type=asset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "gl-accounts?account_type=asset"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /finance/fiscal-years — verify FY2025 seeded",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Is array', () => pm.expect(b).to.be.an('array'));",
+                  "const fy = b.find(y => y.id === 'fb000000-0000-0000-0000-000000000001');",
+                  "pm.test('Seeded FY2025 exists (fb000000...001)', () => {",
+                  "  pm.expect(fy).to.exist;",
+                  "  pm.expect(fy.name).to.eql('FY2025');",
+                  "  pm.expect(fy.status).to.eql('active');",
+                  "});",
+                  "console.log('✅ Fiscal year confirmed:', fy ? fy.name : 'NOT FOUND');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/fiscal-years",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "fiscal-years"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /finance/fiscal-years/:id — single fiscal year",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Name is FY2025', () => pm.expect(b.name).to.eql('FY2025'));",
+                  "pm.test('Status is active', () => pm.expect(b.status).to.eql('active'));",
+                  "pm.test('Has start_date', () => pm.expect(b.start_date).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/fiscal-years/fb000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "fiscal-years",
+                "fb000000-0000-0000-0000-000000000001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /finance/fiscal-years/:id — 404 unknown",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/fiscal-years/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "fiscal-years",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Student Billing (Accounts & Transactions)",
+      "item": [
+        {
+          "name": "POST /finance/students/:id/account — Ron (201 or 409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 or 409', () => pm.expect(pm.response.code).to.be.oneOf([201, 409]));",
+                  "if (pm.response.code === 201) {",
+                  "  const b = pm.response.json();",
+                  "  pm.collectionVariables.set('student_account_ron_id', b.account_id);",
+                  "  pm.test('Balance is zero', () => pm.expect(b.current_balance).to.eql(0));",
+                  "  pm.test('Hold is false', () => pm.expect(b.is_hold_active).to.eql(false));",
+                  "  console.log('Ron account created:', b.account_id);",
+                  "} else { console.warn('Ron account already exists — idempotent re-run'); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "account"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opening_balance\": 0.0\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /finance/students/:id/account — Ron (always captures ID)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('student_account_ron_id', b.id);",
+                  "pm.test('Belongs to Ron', () => pm.expect(b.student_id).to.eql('f2000000-0000-0000-0000-000000000001'));",
+                  "pm.test('Has current_balance', () => pm.expect(b.current_balance).to.be.a('number'));",
+                  "console.log('Ron account ID:', b.id, '| Balance:', b.current_balance);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "account"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /finance/students/:id/account — Luna (201 or 409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 or 409', () => pm.expect(pm.response.code).to.be.oneOf([201, 409]));",
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('student_account_luna_id', pm.response.json().account_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000003/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000003",
+                "account"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "GET /finance/students/:id/account — Luna (always captures ID)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('student_account_luna_id', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000003/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000003",
+                "account"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST account — 409 duplicate Ron",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "account"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "POST account — 404 unknown student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/00000000-0000-0000-0000-000000000000/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "00000000-0000-0000-0000-000000000000",
+                "account"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "POST account — 400 negative opening_balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000002/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000002",
+                "account"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opening_balance\": -100.0\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /finance/student-accounts — paginated list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(b.data).to.be.an('array'));",
+                  "pm.test('At least 2 accounts (Ron + Luna)', () => pm.expect(b.total).to.be.at.least(2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts?per_page=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts?per_page=10"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /finance/student-accounts?is_hold_active=false",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "b.data.forEach(a => pm.expect(a.is_hold_active).to.eql(false));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts?is_hold_active=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts?is_hold_active=false"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /finance/student-accounts/:id — Ron",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is Ron account', () => pm.expect(pm.response.json().student_id).to.eql('f2000000-0000-0000-0000-000000000001'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /finance/student-accounts/:id — 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST transactions — tuition_charge +3500 (Ron)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('transaction_id', b.transaction_id);",
+                  "pm.test('Amount is 3500', () => pm.expect(b.amount).to.eql(3500.00));",
+                  "pm.test('Type is tuition_charge', () => pm.expect(b.transaction_type).to.eql('tuition_charge'));",
+                  "pm.test('Balance increased', () => pm.expect(b.updated_balance).to.be.at.least(3500));",
+                  "console.log('Tuition charge posted. New balance:', b.updated_balance);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_type\": \"tuition_charge\",\n  \"amount\": 3500.0,\n  \"description\": \"Fall 2024 Tuition \\u2014 Defence Against the Dark Arts\",\n  \"gl_account_id\": \"fa000000-0000-0000-0000-000000000001\",\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"reference_number\": \"DFDA-2024-001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST transactions — fee_charge +150 (Ron)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Amount is 150', () => pm.expect(pm.response.json().amount).to.eql(150.00));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_type\": \"fee_charge\",\n  \"amount\": 150.0,\n  \"description\": \"Student Activity Fee \\u2014 Fall 2024\",\n  \"gl_account_id\": \"fa000000-0000-0000-0000-000000000001\",\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST transactions — student_payment -1000 (Ron)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('Amount is -1000', () => pm.expect(b.amount).to.eql(-1000.00));",
+                  "pm.test('Balance decreased from peak', () => pm.expect(b.updated_balance).to.be.below(3651));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_type\": \"student_payment\",\n  \"amount\": -1000.0,\n  \"description\": \"Online payment \\u2014 bank transfer\",\n  \"gl_account_id\": \"fa000000-0000-0000-0000-000000000001\",\n  \"reference_number\": \"PMT-2024-0089\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST transactions — 400 charge type with negative amount",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_type\": \"tuition_charge\",\n  \"amount\": -500.0,\n  \"description\": \"Bad sign\",\n  \"gl_account_id\": \"fa000000-0000-0000-0000-000000000001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST transactions — 400 payment type with positive amount",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_type\": \"student_payment\",\n  \"amount\": 500.0,\n  \"description\": \"Bad sign\",\n  \"gl_account_id\": \"fa000000-0000-0000-0000-000000000001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST transactions — 400 invalid transaction_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_type\": \"magic_payment\",\n  \"amount\": 100.0,\n  \"description\": \"Bad type\",\n  \"gl_account_id\": \"fa000000-0000-0000-0000-000000000001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST transactions — 400 inactive GL account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_type\": \"fee_charge\",\n  \"amount\": 50.0,\n  \"description\": \"Bad GL\",\n  \"gl_account_id\": \"00000000-0000-0000-0000-000000000000\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST transactions — 400 empty description",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_type\": \"fee_charge\",\n  \"amount\": 50.0,\n  \"description\": \"\",\n  \"gl_account_id\": \"fa000000-0000-0000-0000-000000000001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET transactions — Ron full list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('At least 3 transactions', () => pm.expect(b.data.length).to.be.at.least(3));",
+                  "pm.test('Has account_balance', () => pm.expect(b.account_balance).to.be.a('number'));",
+                  "pm.test('Sorted newest first', () => {",
+                  "  if (b.data.length >= 2) {",
+                  "    pm.expect(new Date(b.data[0].transaction_date) >= new Date(b.data[1].transaction_date)).to.be.true;",
+                  "  }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET transactions — filter by type (tuition_charge)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('All are tuition_charge', () => {",
+                  "  b.data.forEach(t => pm.expect(t.transaction_type).to.eql('tuition_charge'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions?transaction_type=tuition_charge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions?transaction_type=tuition_charge"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET transactions — filter by term",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('All have Fall 2024 term', () => {",
+                  "  b.data.forEach(t => pm.expect(t.term_id).to.eql('f3000000-0000-0000-0000-000000000001'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions?term_id=f3000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions?term_id=f3000000-0000-0000-0000-000000000001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /transactions/:id — specific transaction",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('ID matches', () => pm.expect(b.id).to.eql(pm.collectionVariables.get('transaction_id')));",
+                  "pm.test('Has gl_account_name', () => pm.expect(b.gl_account_name).to.be.a('string'));",
+                  "pm.test('GL account name correct', () => pm.expect(b.gl_account_name).to.eql('Student Accounts Receivable'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions/{{transaction_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions",
+                "{{transaction_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /transactions/:id — 404 unknown",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /hold — initially false",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Hold is false', () => pm.expect(pm.response.json().is_hold_active).to.eql(false));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/hold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "hold"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /hold — place hold",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Hold is now active', () => pm.expect(pm.response.json().is_hold_active).to.eql(true));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/hold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "hold"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_hold_active\": true,\n  \"reason\": \"Unpaid balance exceeds 90-day threshold \\u2014 placed by Bursar\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /hold — idempotent re-hold (200, no-op)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Hold still active', () => pm.expect(pm.response.json().is_hold_active).to.eql(true));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/hold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "hold"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_hold_active\": true,\n  \"reason\": \"Confirming hold is still active\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /hold — release hold",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Hold is now released', () => pm.expect(pm.response.json().is_hold_active).to.eql(false));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/hold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "hold"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_hold_active\": false,\n  \"reason\": \"Balance settled \\u2014 payment received 2024-11-01\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /hold — 400 missing reason",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/hold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "hold"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_hold_active\": true,\n  \"reason\": \"\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Financial Aid (FAFSA & Awards)",
+      "item": [
+        {
+          "name": "GET /fafsa — Ron (empty OK — no FAFSA seed data)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/fafsa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "fafsa"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /fafsa — 404 unknown student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/00000000-0000-0000-0000-000000000000/fafsa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "00000000-0000-0000-0000-000000000000",
+                "fafsa"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /aid-awards — tenant-wide (empty OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has data array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/aid-awards?per_page=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "aid-awards?per_page=10"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST aid-awards — Pell grant for Ron",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('aid_award_pell_id', b.award_id);",
+                  "pm.test('Status is offered', () => pm.expect(b.status).to.eql('offered'));",
+                  "pm.test('Aid type correct', () => pm.expect(b.aid_type).to.eql('federal_grant'));",
+                  "pm.test('Offered amount correct', () => pm.expect(b.offered_amount).to.eql(3697.00));",
+                  "pm.test('Accepted starts at 0', () => pm.expect(b.accepted_amount).to.eql(0));",
+                  "pm.test('Disbursed starts at 0', () => pm.expect(b.disbursed_amount).to.eql(0));",
+                  "console.log('Pell grant created:', b.award_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"fund_name\": \"Federal Pell Grant\",\n  \"aid_type\": \"federal_grant\",\n  \"offered_amount\": 3697.0,\n  \"status\": \"offered\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST aid-awards — Federal subsidized loan for Ron",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('aid_award_loan_id', b.award_id);",
+                  "pm.test('NSLDS type set', () => pm.expect(b.nslds_loan_type).to.eql('SUB'));",
+                  "pm.test('Loan seq set', () => pm.expect(b.loan_sequence_number).to.eql(1));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"fund_name\": \"Federal Subsidized Stafford Loan\",\n  \"aid_type\": \"federal_loan\",\n  \"offered_amount\": 3500.0,\n  \"nslds_loan_type\": \"SUB\",\n  \"loan_sequence_number\": 1,\n  \"loan_period_begin_date\": \"2024-09-02\",\n  \"loan_period_end_date\": \"2025-05-09\",\n  \"grade_level_at_award\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "POST aid-awards — 400 federal_loan missing nslds_loan_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"fund_name\": \"Unspecified Loan\",\n  \"aid_type\": \"federal_loan\",\n  \"offered_amount\": 1000.0\n}"
+            }
+          }
+        },
+        {
+          "name": "POST aid-awards — 400 offered_amount zero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"fund_name\": \"Zero Award\",\n  \"aid_type\": \"institutional_scholarship\",\n  \"offered_amount\": 0.0\n}"
+            }
+          }
+        },
+        {
+          "name": "POST aid-awards — 400 status disbursed on creation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"fund_name\": \"Instant Disburse\",\n  \"aid_type\": \"state_grant\",\n  \"offered_amount\": 500.0,\n  \"status\": \"disbursed\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST aid-awards — 400 invalid aid_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"fund_name\": \"Magic Grant\",\n  \"aid_type\": \"wizard_grant\",\n  \"offered_amount\": 1000.0\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /aid-awards — Ron filtered list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('At least 2 awards', () => pm.expect(pm.response.json().data.length).to.be.at.least(2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /aid-awards/:id — Pell grant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ID matches', () => pm.expect(pm.response.json().award_id).to.eql(pm.collectionVariables.get('aid_award_pell_id')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards/{{aid_award_pell_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards",
+                "{{aid_award_pell_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /aid-awards/:id — 404 unknown",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH aid-awards — accept Pell grant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Status is accepted', () => pm.expect(b.status).to.eql('accepted'));",
+                  "pm.test('Accepted amount is 3697', () => pm.expect(b.accepted_amount).to.eql(3697.00));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards/{{aid_award_pell_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards",
+                "{{aid_award_pell_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"accepted\",\n  \"accepted_amount\": 3697.0\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH aid-awards — 400 disburse without gl_account_id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards/{{aid_award_pell_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards",
+                "{{aid_award_pell_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"disbursed\",\n  \"disbursed_amount\": 3697.0\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH aid-awards — disburse Pell grant (cross-module write)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Status is disbursed', () => pm.expect(b.status).to.eql('disbursed'));",
+                  "pm.test('Disbursed amount is 3697', () => pm.expect(b.disbursed_amount).to.eql(3697.00));",
+                  "console.log('✅ Pell disbursed — check Ron account for aid_disbursement credit');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards/{{aid_award_pell_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards",
+                "{{aid_award_pell_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"disbursed\",\n  \"disbursed_amount\": 3697.0,\n  \"disbursement_gl_account_id\": \"fa000000-0000-0000-0000-000000000001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH aid-awards — 409 modify already-disbursed award",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/aid-awards/{{aid_award_pell_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "aid-awards",
+                "{{aid_award_pell_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"cancelled\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET transactions — verify aid_disbursement posted to Ron account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Aid disbursement transaction exists', () => pm.expect(b.data.length).to.be.at.least(1));",
+                  "pm.test('Amount is negative credit', () => pm.expect(b.data[0].amount).to.be.below(0));",
+                  "pm.test('Type is aid_disbursement', () => pm.expect(b.data[0].transaction_type).to.eql('aid_disbursement'));",
+                  "pm.test('Reference is Pell award ID', () => pm.expect(b.data[0].reference_number).to.eql(pm.collectionVariables.get('aid_award_pell_id')));",
+                  "console.log('✅ Cross-module write confirmed — disbursement transaction on Ron account');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/student-accounts/{{student_account_ron_id}}/transactions?transaction_type=aid_disbursement",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "student-accounts",
+                "{{student_account_ron_id}}",
+                "transactions?transaction_type=aid_disbursement"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — SAP (Satisfactory Academic Progress)",
+      "item": [
+        {
+          "name": "GET /sap/policies — list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/sap/policies",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "sap",
+                "policies"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /students/:id/sap — Ron (empty array OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(b.data).to.be.an('array'));",
+                  "pm.test('Has pagination', () => pm.expect(b.total).to.be.a('number'));",
+                  "console.log('SAP evaluations for Ron:', b.total, '(0 expected — no seed evals)');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/sap",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "sap"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /students/:id/sap — Neville",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000002/sap",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000002",
+                "sap"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST appeal — 400 empty reason (validation fires before DB)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/sap/00000000-0000-0000-0000-000000000000/appeal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "sap",
+                "00000000-0000-0000-0000-000000000000",
+                "appeal"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_form_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"appeal_reason\": \"\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST appeal — 404 unknown evaluation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/sap/00000000-0000-0000-0000-000000000000/appeal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "sap",
+                "00000000-0000-0000-0000-000000000000",
+                "appeal"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_form_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"appeal_reason\": \"Extenuating circumstances \\u2014 medical emergency\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — VA Benefits (Certifications)",
+      "item": [
+        {
+          "name": "GET veteran-profile — Ron (404 — no veteran profile seeded)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "console.log('Expected 404 — Ron has no veteran profile in seed data');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/veteran-profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "veteran-profile"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET va-certifications — Ron (200 empty)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Empty data array', () => pm.expect(pm.response.json().data.length).to.eql(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/va-certifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "va-certifications"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST va-certifications — 400 zero credits",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/va-certifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "va-certifications"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"credits_certified\": 0.0,\n  \"tuition_reported\": 3500.0,\n  \"fees_reported\": 0.0,\n  \"certification_date\": \"2024-09-05\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST va-certifications — 400 invalid enrollment_intensity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/va-certifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "va-certifications"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"credits_certified\": 12.0,\n  \"tuition_reported\": 3500.0,\n  \"fees_reported\": 0.0,\n  \"certification_date\": \"2024-09-05\",\n  \"enrollment_intensity_va\": \"super_full_time\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST va-certifications — 404 no veteran profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/va-certifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "va-certifications"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"term_id\": \"f3000000-0000-0000-0000-000000000001\",\n  \"credits_certified\": 12.0,\n  \"tuition_reported\": 3500.0,\n  \"fees_reported\": 150.0,\n  \"certification_date\": \"2024-09-05\",\n  \"enrollment_intensity_va\": \"full_time\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH va-certifications/:id — 404 unknown cert",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/va-certifications/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "va-certifications",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amendment_date\": \"2024-10-01\",\n  \"credits_certified\": 9.0\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH va-certifications/:id — 400 no changes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/finance/students/f2000000-0000-0000-0000-000000000001/va-certifications/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "students",
+                "f2000000-0000-0000-0000-000000000001",
+                "va-certifications",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amendment_date\": \"2024-10-01\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — Payroll / Staff Pay",
+      "item": [
+        {
+          "name": "GET payroll/runs — list (empty OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(b.data).to.be.an('array'));",
+                  "console.log('Payroll runs:', b.total, '(0 expected on fresh DB)');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/payroll/runs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "payroll",
+                "runs"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET payroll/runs?status=disbursed — filtered",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.response.json().data.forEach(r => pm.expect(r.status).to.eql('disbursed'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/payroll/runs?status=disbursed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "payroll",
+                "runs?status=disbursed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET payroll/runs/:id — 404 unknown",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/payroll/runs/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "payroll",
+                "runs",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET payroll/runs/:id/stubs — 404 unknown run",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/payroll/runs/00000000-0000-0000-0000-000000000000/stubs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "payroll",
+                "runs",
+                "00000000-0000-0000-0000-000000000000",
+                "stubs"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET payroll/item-types — list (empty OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/payroll/item-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "payroll",
+                "item-types"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /staff/:id/pay-stubs — Dumbledore (empty OK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has data array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/staff/f1000000-0000-0000-0000-000000000001/pay-stubs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "staff",
+                "f1000000-0000-0000-0000-000000000001",
+                "pay-stubs"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /staff/:id/pay-stubs — Snape with date range",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/finance/staff/f1000000-0000-0000-0000-000000000003/pay-stubs?date_from=2024-01-01&date_to=2025-12-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "finance",
+                "staff",
+                "f1000000-0000-0000-0000-000000000003",
+                "pay-stubs?date_from=2024-01-01&date_to=2025-12-31"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 — Auth / Cleanup",
+      "item": [
+        {
+          "name": "POST /auth/logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "pm.collectionVariables.set('access_token', '');",
+                  "pm.collectionVariables.set('refresh_token', '');",
+                  "console.log('✅ Finance collection complete. Session revoked.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
