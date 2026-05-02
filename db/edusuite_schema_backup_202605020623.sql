@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict kPfkiHjXttdkaQXJ67SstcVIU3tCLC4pJySOWkbC0ijJb4O2c0b4HEhKdBgNavb
+\restrict DFYWqSFw7b2HBeHiBRi3VytFKxUe8oGskbYCd3t8mCEXgoR9dH1dP9HbXlwi2SK
 
 -- Dumped from database version 18.3
 -- Dumped by pg_dump version 18.3
@@ -52298,7 +52298,7 @@ CREATE POLICY app_access ON auth_governance.token_families TO edusuite_app USING
 
 CREATE POLICY cross_tenant_user_isolation ON auth_governance.mfa_backup_codes AS RESTRICTIVE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = mfa_backup_codes.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (false);
+  WHERE ((tm.user_id = mfa_backup_codes.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
 
 
 --
@@ -52307,7 +52307,7 @@ CREATE POLICY cross_tenant_user_isolation ON auth_governance.mfa_backup_codes AS
 
 CREATE POLICY cross_tenant_user_isolation ON auth_governance.mfa_factors AS RESTRICTIVE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = mfa_factors.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (false);
+  WHERE ((tm.user_id = mfa_factors.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
 
 
 --
@@ -52316,7 +52316,7 @@ CREATE POLICY cross_tenant_user_isolation ON auth_governance.mfa_factors AS REST
 
 CREATE POLICY cross_tenant_user_isolation ON auth_governance.password_history AS RESTRICTIVE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = password_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (false);
+  WHERE ((tm.user_id = password_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
 
 
 --
@@ -53224,7 +53224,7 @@ CREATE POLICY app_access ON comms.webhook_subscriptions TO edusuite_app USING (t
 
 CREATE POLICY cross_tenant_user_devices ON comms.user_devices AS RESTRICTIVE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = user_devices.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+  WHERE ((tm.user_id = user_devices.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
 
 
 --
@@ -53473,7 +53473,7 @@ ALTER TABLE core.audit_logs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY cross_tenant_user_isolation ON core.emergency_contacts AS RESTRICTIVE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = emergency_contacts.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+  WHERE ((tm.user_id = emergency_contacts.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
 
 
 --
@@ -53482,7 +53482,7 @@ CREATE POLICY cross_tenant_user_isolation ON core.emergency_contacts AS RESTRICT
 
 CREATE POLICY cross_tenant_user_isolation ON core.user_addresses AS RESTRICTIVE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = user_addresses.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+  WHERE ((tm.user_id = user_addresses.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
 
 
 --
@@ -53491,7 +53491,7 @@ CREATE POLICY cross_tenant_user_isolation ON core.user_addresses AS RESTRICTIVE 
 
 CREATE POLICY cross_tenant_user_isolation ON core.user_name_history AS RESTRICTIVE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = user_name_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+  WHERE ((tm.user_id = user_name_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
 
 
 --
@@ -53500,7 +53500,7 @@ CREATE POLICY cross_tenant_user_isolation ON core.user_name_history AS RESTRICTI
 
 CREATE POLICY cross_tenant_user_isolation ON core.user_phones AS RESTRICTIVE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = user_phones.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+  WHERE ((tm.user_id = user_phones.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
 
 
 --
@@ -53509,7 +53509,7 @@ CREATE POLICY cross_tenant_user_isolation ON core.user_phones AS RESTRICTIVE USI
 
 CREATE POLICY cross_tenant_user_isolation ON core.users AS RESTRICTIVE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = users.id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+  WHERE ((tm.user_id = users.id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
 
 
 --
@@ -68811,5 +68811,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA workflow GRANT SELECT,INSER
 -- PostgreSQL database dump complete
 --
 
-\unrestrict kPfkiHjXttdkaQXJ67SstcVIU3tCLC4pJySOWkbC0ijJb4O2c0b4HEhKdBgNavb
+\unrestrict DFYWqSFw7b2HBeHiBRi3VytFKxUe8oGskbYCd3t8mCEXgoR9dH1dP9HbXlwi2SK
 
