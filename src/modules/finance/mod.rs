@@ -16,11 +16,11 @@
 pub mod handlers;
 pub mod models;
 pub mod queries;
-// pub mod write_models;   // Step 2
-// pub mod write_queries;  // Step 2
+pub mod write_models;
+pub mod write_queries;
 
 use axum::{
-    routing::get,
+    routing::{get, patch, post},
     Router,
 };
 use crate::state::AppState;
@@ -30,27 +30,27 @@ pub fn router() -> Router<AppState> {
 
         // ── Group 1: Student Billing ──────────────────────────────────────
         .route("/student-accounts",
-            get(handlers::billing::list_student_accounts))
-            // .post(handlers::billing::create_student_account))          // Step 2
+            get(handlers::billing::list_student_accounts)
+           .post(handlers::billing::create_student_account))
 
         .route("/student-accounts/:id",
             get(handlers::billing::get_student_account))
 
         .route("/student-accounts/:id/transactions",
-            get(handlers::billing::list_transactions))
-            // .post(handlers::billing::post_transaction))                // Step 2
+            get(handlers::billing::list_transactions)
+           .post(handlers::billing::post_transaction))
 
         .route("/student-accounts/:id/transactions/:tx_id",
             get(handlers::billing::get_transaction))
 
         .route("/student-accounts/:id/hold",
-            get(handlers::billing::get_hold_status))
-            // .patch(handlers::billing::set_hold))                       // Step 2
+            get(handlers::billing::get_hold_status)
+           .patch(handlers::billing::set_hold))
 
         // Convenience: look up account by student UUID
         .route("/students/:student_id/account",
-            get(handlers::billing::get_account_by_student))
-            // .post(handlers::billing::create_student_account_for_student)) // Step 2
+            get(handlers::billing::get_account_by_student)
+           .post(handlers::billing::create_student_account))
 
         // ── Group 2: Financial Aid ────────────────────────────────────────
         .route("/students/:student_id/fafsa",
