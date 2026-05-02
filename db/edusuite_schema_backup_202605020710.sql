@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict DFYWqSFw7b2HBeHiBRi3VytFKxUe8oGskbYCd3t8mCEXgoR9dH1dP9HbXlwi2SK
+\restrict Poe2tdsamRqWTktc8pD1fXeA93aQrnsBrfiH8bhryP7Z8QbaAalpALC7EOvTsX0
 
 -- Dumped from database version 18.3
 -- Dumped by pg_dump version 18.3
@@ -4156,50 +4156,54 @@ DECLARE
     v_session_id     uuid;
     v_service        varchar(100);
     v_schema_name    varchar(50);
+    v_nil_uuid CONSTANT uuid := '00000000-0000-0000-0000-000000000000';
 BEGIN
     -- ── Read session-local context (set by Rust middleware or calling session) ──
+    -- Treat the nil sentinel (set by 02_guc_defaults.sql on unscoped pool
+    -- connections) as NULL so it never triggers a FK violation on actor_id.
     BEGIN
-        v_actor_id   := current_setting('app.current_user_id',   true)::uuid;
+        v_actor_id := current_setting('app.current_user_id', true)::uuid;
+        IF v_actor_id = v_nil_uuid THEN v_actor_id := NULL; END IF;
     EXCEPTION WHEN others THEN v_actor_id := NULL; END;
- 
+
     BEGIN
-        v_tenant_id  := current_setting('app.current_tenant_id', true)::uuid;
+        v_tenant_id := current_setting('app.current_tenant_id', true)::uuid;
+        IF v_tenant_id = v_nil_uuid THEN v_tenant_id := NULL; END IF;
     EXCEPTION WHEN others THEN v_tenant_id := NULL; END;
- 
+
     BEGIN
         v_request_id := current_setting('app.current_request_id', true)::uuid;
+        IF v_request_id = v_nil_uuid THEN v_request_id := NULL; END IF;
     EXCEPTION WHEN others THEN v_request_id := NULL; END;
- 
+
     BEGIN
         v_session_id := current_setting('app.current_session_id', true)::uuid;
+        IF v_session_id = v_nil_uuid THEN v_session_id := NULL; END IF;
     EXCEPTION WHEN others THEN v_session_id := NULL; END;
- 
-    v_service     := COALESCE(
-                         current_setting('app.current_service', true),
-                         'db-trigger'
-                     );
+
+    v_service     := COALESCE(current_setting('app.current_service', true), 'db-trigger');
     v_schema_name := TG_TABLE_SCHEMA;
- 
+
     -- ── Build OLD and NEW row snapshots ───────────────────────────────────────
     IF TG_OP = 'INSERT' THEN
         v_action  := 'insert';
         v_new_row := row_to_json(NEW)::jsonb;
         v_old_row := NULL;
         BEGIN v_record_id := (NEW).id; EXCEPTION WHEN others THEN v_record_id := NULL; END;
- 
+
     ELSIF TG_OP = 'UPDATE' THEN
         v_action  := 'update';
         v_new_row := row_to_json(NEW)::jsonb;
         v_old_row := row_to_json(OLD)::jsonb;
         BEGIN v_record_id := (NEW).id; EXCEPTION WHEN others THEN v_record_id := NULL; END;
- 
+
     ELSIF TG_OP = 'DELETE' THEN
         v_action  := 'delete';
         v_old_row := row_to_json(OLD)::jsonb;
         v_new_row := NULL;
         BEGIN v_record_id := (OLD).id; EXCEPTION WHEN others THEN v_record_id := NULL; END;
     END IF;
- 
+
     -- ── Mask sensitive columns ────────────────────────────────────────────────
     FOR v_mask_rec IN
         SELECT column_name, mask_value
@@ -4222,7 +4226,7 @@ BEGIN
             );
         END IF;
     END LOOP;
- 
+
     -- ── Compute changed_fields diff (UPDATE only) ─────────────────────────────
     IF v_action = 'update' AND v_old_row IS NOT NULL AND v_new_row IS NOT NULL THEN
         SELECT jsonb_object_agg(
@@ -4232,10 +4236,9 @@ BEGIN
         INTO v_changed_fields
         FROM jsonb_object_keys(v_old_row) AS t(key)
         WHERE v_old_row -> key IS DISTINCT FROM v_new_row -> key
-          -- Exclude bookkeeping fields that change on every row
           AND key NOT IN ('updated_at', 'created_at');
     END IF;
- 
+
     -- ── Build revert_payload ──────────────────────────────────────────────────
     IF v_action = 'insert' THEN
         v_revert_payload := jsonb_build_object(
@@ -4243,7 +4246,6 @@ BEGIN
             'id',   v_record_id
         );
     ELSIF v_action = 'update' AND v_changed_fields IS NOT NULL THEN
-        -- Revert payload contains only the changed fields set to their old values
         SELECT jsonb_build_object(
             'type',   'update',
             'id',     v_record_id,
@@ -4257,21 +4259,21 @@ BEGIN
             'row',  v_old_row
         );
     END IF;
- 
+
     -- ── Check is_sensitive ────────────────────────────────────────────────────
     SELECT EXISTS (
         SELECT 1 FROM core.audit_sensitive_tables
         WHERE schema_name = v_schema_name
           AND table_name  = TG_TABLE_NAME
     ) INTO v_is_sensitive;
- 
+
     -- ── Write the audit log row ───────────────────────────────────────────────
     -- Skip no-op UPDATEs (nothing actually changed)
     IF v_action = 'update' AND (v_changed_fields IS NULL OR v_changed_fields = '{}'::jsonb) THEN
         IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
         RETURN NEW;
     END IF;
- 
+
     INSERT INTO core.audit_logs (
         tenant_id,
         actor_id,
@@ -4305,7 +4307,7 @@ BEGIN
         v_is_sensitive,
         now()
     );
- 
+
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
     RETURN NEW;
 END;
@@ -52293,30 +52295,105 @@ CREATE POLICY app_access ON auth_governance.token_families TO edusuite_app USING
 
 
 --
--- Name: mfa_backup_codes cross_tenant_user_isolation; Type: POLICY; Schema: auth_governance; Owner: postgres
+-- Name: mfa_backup_codes cross_tenant_user_isolation_delete; Type: POLICY; Schema: auth_governance; Owner: postgres
 --
 
-CREATE POLICY cross_tenant_user_isolation ON auth_governance.mfa_backup_codes AS RESTRICTIVE USING ((EXISTS ( SELECT 1
+CREATE POLICY cross_tenant_user_isolation_delete ON auth_governance.mfa_backup_codes AS RESTRICTIVE FOR DELETE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = mfa_backup_codes.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+  WHERE ((tm.user_id = mfa_backup_codes.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
 
 
 --
--- Name: mfa_factors cross_tenant_user_isolation; Type: POLICY; Schema: auth_governance; Owner: postgres
+-- Name: mfa_factors cross_tenant_user_isolation_delete; Type: POLICY; Schema: auth_governance; Owner: postgres
 --
 
-CREATE POLICY cross_tenant_user_isolation ON auth_governance.mfa_factors AS RESTRICTIVE USING ((EXISTS ( SELECT 1
+CREATE POLICY cross_tenant_user_isolation_delete ON auth_governance.mfa_factors AS RESTRICTIVE FOR DELETE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = mfa_factors.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+  WHERE ((tm.user_id = mfa_factors.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
 
 
 --
--- Name: password_history cross_tenant_user_isolation; Type: POLICY; Schema: auth_governance; Owner: postgres
+-- Name: password_history cross_tenant_user_isolation_delete; Type: POLICY; Schema: auth_governance; Owner: postgres
 --
 
-CREATE POLICY cross_tenant_user_isolation ON auth_governance.password_history AS RESTRICTIVE USING ((EXISTS ( SELECT 1
+CREATE POLICY cross_tenant_user_isolation_delete ON auth_governance.password_history AS RESTRICTIVE FOR DELETE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = password_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+  WHERE ((tm.user_id = password_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: mfa_backup_codes cross_tenant_user_isolation_insert; Type: POLICY; Schema: auth_governance; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_insert ON auth_governance.mfa_backup_codes AS RESTRICTIVE FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: mfa_factors cross_tenant_user_isolation_insert; Type: POLICY; Schema: auth_governance; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_insert ON auth_governance.mfa_factors AS RESTRICTIVE FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: password_history cross_tenant_user_isolation_insert; Type: POLICY; Schema: auth_governance; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_insert ON auth_governance.password_history AS RESTRICTIVE FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: mfa_backup_codes cross_tenant_user_isolation_read; Type: POLICY; Schema: auth_governance; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_read ON auth_governance.mfa_backup_codes AS RESTRICTIVE FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = mfa_backup_codes.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: mfa_factors cross_tenant_user_isolation_read; Type: POLICY; Schema: auth_governance; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_read ON auth_governance.mfa_factors AS RESTRICTIVE FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = mfa_factors.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: password_history cross_tenant_user_isolation_read; Type: POLICY; Schema: auth_governance; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_read ON auth_governance.password_history AS RESTRICTIVE FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = password_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: mfa_backup_codes cross_tenant_user_isolation_update; Type: POLICY; Schema: auth_governance; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_update ON auth_governance.mfa_backup_codes AS RESTRICTIVE FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = mfa_backup_codes.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: mfa_factors cross_tenant_user_isolation_update; Type: POLICY; Schema: auth_governance; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_update ON auth_governance.mfa_factors AS RESTRICTIVE FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = mfa_factors.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: password_history cross_tenant_user_isolation_update; Type: POLICY; Schema: auth_governance; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_update ON auth_governance.password_history AS RESTRICTIVE FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = password_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
 
 
 --
@@ -53219,12 +53296,37 @@ CREATE POLICY app_access ON comms.webhook_subscriptions TO edusuite_app USING (t
 
 
 --
--- Name: user_devices cross_tenant_user_devices; Type: POLICY; Schema: comms; Owner: postgres
+-- Name: user_devices cross_tenant_user_devices_delete; Type: POLICY; Schema: comms; Owner: postgres
 --
 
-CREATE POLICY cross_tenant_user_devices ON comms.user_devices AS RESTRICTIVE USING ((EXISTS ( SELECT 1
+CREATE POLICY cross_tenant_user_devices_delete ON comms.user_devices AS RESTRICTIVE FOR DELETE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = user_devices.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+  WHERE ((tm.user_id = user_devices.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: user_devices cross_tenant_user_devices_insert; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_devices_insert ON comms.user_devices AS RESTRICTIVE FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: user_devices cross_tenant_user_devices_read; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_devices_read ON comms.user_devices AS RESTRICTIVE FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = user_devices.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: user_devices cross_tenant_user_devices_update; Type: POLICY; Schema: comms; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_devices_update ON comms.user_devices AS RESTRICTIVE FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = user_devices.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
 
 
 --
@@ -53371,6 +53473,174 @@ CREATE POLICY app_access ON core.audit_logs TO edusuite_app USING (true) WITH CH
 
 
 --
+-- Name: audit_logs_y2026m01 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m01 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m02 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m02 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m03 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m03 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m04 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m04 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m05 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m05 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m06 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m06 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m07 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m07 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m08 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m08 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m09 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m09 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m10 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m10 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m11 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m11 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2026m12 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2026m12 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m01 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m01 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m02 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m02 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m03 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m03 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m04 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m04 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m05 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m05 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m06 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m06 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m07 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m07 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m08 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m08 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m09 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m09 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m10 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m10 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m11 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m11 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: audit_logs_y2027m12 app_access; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access ON core.audit_logs_y2027m12 TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
 -- Name: departments app_access; Type: POLICY; Schema: core; Owner: postgres
 --
 
@@ -53448,17 +53718,44 @@ CREATE POLICY app_access ON core.user_roles TO edusuite_app USING (true) WITH CH
 
 
 --
--- Name: users app_access; Type: POLICY; Schema: core; Owner: postgres
---
-
-CREATE POLICY app_access ON core.users TO edusuite_app USING (true) WITH CHECK (true);
-
-
---
 -- Name: webhook_endpoints app_access; Type: POLICY; Schema: core; Owner: postgres
 --
 
 CREATE POLICY app_access ON core.webhook_endpoints TO edusuite_app USING (true) WITH CHECK (true);
+
+
+--
+-- Name: users app_access_delete; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access_delete ON core.users FOR DELETE TO edusuite_app USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = users.id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: users app_access_select; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access_select ON core.users FOR SELECT TO edusuite_app USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = users.id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: users app_access_update; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access_update ON core.users FOR UPDATE TO edusuite_app USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = users.id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+
+
+--
+-- Name: users app_access_write; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY app_access_write ON core.users FOR INSERT TO edusuite_app WITH CHECK (true);
 
 
 --
@@ -53468,48 +53765,283 @@ CREATE POLICY app_access ON core.webhook_endpoints TO edusuite_app USING (true) 
 ALTER TABLE core.audit_logs ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: emergency_contacts cross_tenant_user_isolation; Type: POLICY; Schema: core; Owner: postgres
+-- Name: audit_logs_y2026m01; Type: ROW SECURITY; Schema: core; Owner: postgres
 --
 
-CREATE POLICY cross_tenant_user_isolation ON core.emergency_contacts AS RESTRICTIVE USING ((EXISTS ( SELECT 1
+ALTER TABLE core.audit_logs_y2026m01 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m02; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m02 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m03; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m03 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m04; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m04 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m05; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m05 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m06; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m06 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m07; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m07 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m08; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m08 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m09; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m09 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m10; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m10 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m11; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m11 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2026m12; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2026m12 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m01; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m01 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m02; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m02 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m03; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m03 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m04; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m04 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m05; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m05 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m06; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m06 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m07; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m07 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m08; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m08 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m09; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m09 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m10; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m10 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m11; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m11 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: audit_logs_y2027m12; Type: ROW SECURITY; Schema: core; Owner: postgres
+--
+
+ALTER TABLE core.audit_logs_y2027m12 ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: emergency_contacts cross_tenant_user_isolation_delete; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_delete ON core.emergency_contacts AS RESTRICTIVE FOR DELETE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = emergency_contacts.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+  WHERE ((tm.user_id = emergency_contacts.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
 
 
 --
--- Name: user_addresses cross_tenant_user_isolation; Type: POLICY; Schema: core; Owner: postgres
+-- Name: user_addresses cross_tenant_user_isolation_delete; Type: POLICY; Schema: core; Owner: postgres
 --
 
-CREATE POLICY cross_tenant_user_isolation ON core.user_addresses AS RESTRICTIVE USING ((EXISTS ( SELECT 1
+CREATE POLICY cross_tenant_user_isolation_delete ON core.user_addresses AS RESTRICTIVE FOR DELETE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = user_addresses.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+  WHERE ((tm.user_id = user_addresses.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
 
 
 --
--- Name: user_name_history cross_tenant_user_isolation; Type: POLICY; Schema: core; Owner: postgres
+-- Name: user_name_history cross_tenant_user_isolation_delete; Type: POLICY; Schema: core; Owner: postgres
 --
 
-CREATE POLICY cross_tenant_user_isolation ON core.user_name_history AS RESTRICTIVE USING ((EXISTS ( SELECT 1
+CREATE POLICY cross_tenant_user_isolation_delete ON core.user_name_history AS RESTRICTIVE FOR DELETE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = user_name_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+  WHERE ((tm.user_id = user_name_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
 
 
 --
--- Name: user_phones cross_tenant_user_isolation; Type: POLICY; Schema: core; Owner: postgres
+-- Name: user_phones cross_tenant_user_isolation_delete; Type: POLICY; Schema: core; Owner: postgres
 --
 
-CREATE POLICY cross_tenant_user_isolation ON core.user_phones AS RESTRICTIVE USING ((EXISTS ( SELECT 1
+CREATE POLICY cross_tenant_user_isolation_delete ON core.user_phones AS RESTRICTIVE FOR DELETE USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = user_phones.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+  WHERE ((tm.user_id = user_phones.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
 
 
 --
--- Name: users cross_tenant_user_isolation; Type: POLICY; Schema: core; Owner: postgres
+-- Name: emergency_contacts cross_tenant_user_isolation_insert; Type: POLICY; Schema: core; Owner: postgres
 --
 
-CREATE POLICY cross_tenant_user_isolation ON core.users AS RESTRICTIVE USING ((EXISTS ( SELECT 1
+CREATE POLICY cross_tenant_user_isolation_insert ON core.emergency_contacts AS RESTRICTIVE FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: user_addresses cross_tenant_user_isolation_insert; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_insert ON core.user_addresses AS RESTRICTIVE FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: user_name_history cross_tenant_user_isolation_insert; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_insert ON core.user_name_history AS RESTRICTIVE FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: user_phones cross_tenant_user_isolation_insert; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_insert ON core.user_phones AS RESTRICTIVE FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: emergency_contacts cross_tenant_user_isolation_read; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_read ON core.emergency_contacts AS RESTRICTIVE FOR SELECT USING ((EXISTS ( SELECT 1
    FROM core.tenant_memberships tm
-  WHERE ((tm.user_id = users.id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid))))) WITH CHECK (true);
+  WHERE ((tm.user_id = emergency_contacts.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: user_addresses cross_tenant_user_isolation_read; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_read ON core.user_addresses AS RESTRICTIVE FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = user_addresses.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: user_name_history cross_tenant_user_isolation_read; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_read ON core.user_name_history AS RESTRICTIVE FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = user_name_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: user_phones cross_tenant_user_isolation_read; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_read ON core.user_phones AS RESTRICTIVE FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = user_phones.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: emergency_contacts cross_tenant_user_isolation_update; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_update ON core.emergency_contacts AS RESTRICTIVE FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = emergency_contacts.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: user_addresses cross_tenant_user_isolation_update; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_update ON core.user_addresses AS RESTRICTIVE FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = user_addresses.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: user_name_history cross_tenant_user_isolation_update; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_update ON core.user_name_history AS RESTRICTIVE FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = user_name_history.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
+
+
+--
+-- Name: user_phones cross_tenant_user_isolation_update; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY cross_tenant_user_isolation_update ON core.user_phones AS RESTRICTIVE FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM core.tenant_memberships tm
+  WHERE ((tm.user_id = user_phones.user_id) AND (tm.tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)))));
 
 
 --
@@ -53578,6 +54110,174 @@ CREATE POLICY tenant_isolation_memberships ON core.tenant_memberships AS RESTRIC
 --
 
 CREATE POLICY tenant_isolation_policy ON core.audit_logs AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m01 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m01 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m02 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m02 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m03 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m03 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m04 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m04 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m05 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m05 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m06 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m06 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m07 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m07 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m08 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m08 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m09 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m09 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m10 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m10 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m11 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m11 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2026m12 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2026m12 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m01 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m01 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m02 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m02 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m03 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m03 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m04 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m04 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m05 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m05 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m06 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m06 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m07 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m07 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m08 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m08 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m09 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m09 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m10 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m10 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m11 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m11 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: audit_logs_y2027m12 tenant_isolation_policy; Type: POLICY; Schema: core; Owner: postgres
+--
+
+CREATE POLICY tenant_isolation_policy ON core.audit_logs_y2027m12 AS RESTRICTIVE USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 --
@@ -68811,5 +69511,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA workflow GRANT SELECT,INSER
 -- PostgreSQL database dump complete
 --
 
-\unrestrict DFYWqSFw7b2HBeHiBRi3VytFKxUe8oGskbYCd3t8mCEXgoR9dH1dP9HbXlwi2SK
+\unrestrict Poe2tdsamRqWTktc8pD1fXeA93aQrnsBrfiH8bhryP7Z8QbaAalpALC7EOvTsX0
 

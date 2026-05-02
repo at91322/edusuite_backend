@@ -145,3 +145,77 @@ pub async fn get_student_enrollments(
 
     Ok(Json(enrollments))
 }
+
+// ── POST /sis/students ────────────────────────────────────────────────────────
+
+pub async fn create_student(
+    State(_state): State<AppState>,
+    mut user: AuthUser,
+    Json(req): Json<super::write_models::CreateStudentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    use axum::http::StatusCode;
+
+    // Validate input before touching the database
+    req.validate().map_err(|errs| AppError::BadRequest(errs.join("; ")))?;
+
+    let tenant_id = user.claims.tenant_id;
+    let user_id   = super::write_queries::create_student(
+        &mut user.tx, tenant_id, &req,
+    ).await?;
+
+    // Fetch the full detail to return as 201 response
+    let detail = queries::get_student(&mut user.tx, user_id)
+        .await?
+        .ok_or_else(|| AppError::Internal(
+            anyhow::anyhow!("Student created but not found on re-fetch")
+        ))?;
+
+    user.tx.commit().await.map_err(AppError::from)?;
+
+    tracing::info!(
+        tenant_id = %tenant_id,
+        user_id   = %user_id,
+        username  = %req.username,
+        "Student created"
+    );
+
+    Ok((StatusCode::CREATED, Json(detail)))
+}
+
+// ── PATCH /sis/students/:id ───────────────────────────────────────────────────
+
+pub async fn update_student(
+    State(_state): State<AppState>,
+    mut user: AuthUser,
+    Path(student_id): Path<uuid::Uuid>,
+    Json(req): Json<super::write_models::UpdateStudentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+
+    if !req.has_changes() {
+        return Err(AppError::BadRequest(
+            "Request body contains no fields to update".into()
+        ));
+    }
+
+    req.validate().map_err(|errs| AppError::BadRequest(errs.join("; ")))?;
+
+    let tenant_id = user.claims.tenant_id;
+    super::write_queries::update_student(
+        &mut user.tx, tenant_id, student_id, &req,
+    ).await?;
+
+    // Re-fetch updated detail
+    let detail = queries::get_student(&mut user.tx, student_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Student {} not found", student_id)))?;
+
+    user.tx.commit().await.map_err(AppError::from)?;
+
+    tracing::info!(
+        tenant_id  = %tenant_id,
+        student_id = %student_id,
+        "Student updated"
+    );
+
+    Ok(Json(detail))
+}
