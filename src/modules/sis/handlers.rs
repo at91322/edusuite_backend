@@ -1,34 +1,24 @@
 // src/modules/sis/handlers.rs
+//
+// All SIS HTTP handlers. Each handler:
+//   1. Extracts AuthUser (which opens the RLS-scoped transaction)
+//   2. Delegates all DB work to queries:: or write_queries::
+//   3. Commits on success — the extractor rolls back on drop if not committed
+//
+// Role-gating (staff/admin only)
+// will be added in a future middleware pass over all SIS detail endpoints.
 
-use axum::{extract::{Path, Query, State}, response::IntoResponse, Json};
-
-use crate::{
-    error::AppError,
-    http::auth::AuthUser,
-    state::AppState,
-    modules::sis::{
-        models::{ListStudentsParams, StudentListResponse},
-        queries,
-    },
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
 };
 
+use crate::{error::AppError, http::auth::AuthUser, state::AppState};
+use super::{models::*, queries};
+
 // ── GET /sis/students ─────────────────────────────────────────────────────────
-//
-// Returns a paginated list of students for the authenticated tenant.
-//
-// This handler is intentionally narrow — it returns safe summary fields only.
-// FERPA-restricted data (date_of_birth, SSN fragment, race/ethnicity) is
-// excluded. A future GET /sis/students/:id endpoint with role enforcement
-// will expose the full student record.
-//
-// Query parameters:
-//   ?standing=good_standing|academic_probation|academic_suspension|...
-//   ?program_id=<uuid>
-//   ?page=1
-//   ?per_page=25  (max 100)
-//
-// Example:
-//   GET /api/v1/sis/students?standing=academic_probation&page=1&per_page=50
 
 pub async fn list_students(
     State(_state): State<AppState>,
@@ -37,39 +27,16 @@ pub async fn list_students(
 ) -> Result<impl IntoResponse, AppError> {
 
     let (students, total) = queries::list_students(&mut user.tx, &params).await?;
-
     let per_page    = params.per_page();
     let page        = params.page();
     let total_pages = (total + per_page - 1) / per_page;
 
     user.tx.commit().await.map_err(AppError::from)?;
 
-    tracing::debug!(
-        tenant_id  = %user.claims.tenant_id,
-        user_id    = %user.claims.sub,
-        count      = students.len(),
-        total      = total,
-        page       = page,
-        "GET /sis/students"
-    );
-
-    Ok(Json(StudentListResponse {
-        data: students,
-        page,
-        per_page,
-        total,
-        total_pages,
-    }))
+    Ok(Json(StudentListResponse { data: students, page, per_page, total, total_pages }))
 }
 
 // ── GET /sis/students/:id ─────────────────────────────────────────────────────
-//
-// Returns the full student record for a single student.
-// Returns 404 if the student_id does not belong to the authenticated tenant
-// (RLS ensures cross-tenant data is invisible, not a 403).
-//
-// FERPA: demographics fields are included. Role-gating (staff/admin only)
-// will be added in a future middleware pass over all SIS detail endpoints.
 
 pub async fn get_student(
     State(_state): State<AppState>,
@@ -101,9 +68,8 @@ pub async fn get_student(
 pub async fn list_courses(
     State(_state): State<AppState>,
     mut user: AuthUser,
-    Query(params): Query<crate::modules::sis::models::ListCoursesParams>,
+    Query(params): Query<ListCoursesParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    use crate::modules::sis::models::CourseListResponse;
 
     let (courses, total) = queries::list_courses(&mut user.tx, &params).await?;
     let per_page    = params.per_page();
@@ -153,9 +119,7 @@ pub async fn create_student(
     mut user: AuthUser,
     Json(req): Json<super::write_models::CreateStudentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    use axum::http::StatusCode;
 
-    // Validate input before touching the database
     req.validate().map_err(|errs| AppError::BadRequest(errs.join("; ")))?;
 
     let tenant_id = user.claims.tenant_id;
@@ -163,7 +127,6 @@ pub async fn create_student(
         &mut user.tx, tenant_id, &req,
     ).await?;
 
-    // Fetch the full detail to return as 201 response
     let detail = queries::get_student(&mut user.tx, user_id)
         .await?
         .ok_or_else(|| AppError::Internal(
@@ -204,7 +167,6 @@ pub async fn update_student(
         &mut user.tx, tenant_id, student_id, &req,
     ).await?;
 
-    // Re-fetch updated detail
     let detail = queries::get_student(&mut user.tx, student_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Student {} not found", student_id)))?;
@@ -218,4 +180,98 @@ pub async fn update_student(
     );
 
     Ok(Json(detail))
+}
+
+// POST /sis/students/:id/enrollments ───────────────────────────────────────────
+
+pub async fn create_student_enrollment(
+    State(_state): State<AppState>,
+    mut user: AuthUser,
+    Path(student_id): Path<uuid::Uuid>,
+    Json(req): Json<super::write_models::CreateEnrollmentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+
+    req.validate().map_err(|errs| AppError::BadRequest(errs.join("; ")))?;
+
+    let tenant_id = user.claims.tenant_id;
+
+    let response = super::write_queries::create_enrollment(
+        &mut user.tx, tenant_id, student_id, &req,
+    ).await?;
+
+    user.tx.commit().await.map_err(AppError::from)?;
+
+    tracing::info!(
+        tenant_id     = %tenant_id,
+        student_id    = %student_id,
+        section_id    = %req.section_id,
+        status        = %response.status,
+        enrollment_id = %response.enrollment_id,
+        "Student enrollment created"
+    );
+
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+// DELETE /sis/students/:id/enrollments/:enrollment_id ──────────────────────────
+
+pub async fn delete_student_enrollment(
+    State(_state): State<AppState>,
+    mut user: AuthUser,
+    Path((student_id, enrollment_id)): Path<(uuid::Uuid, uuid::Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+
+    let tenant_id = user.claims.tenant_id;
+
+    super::write_queries::drop_enrollment(
+        &mut user.tx, tenant_id, student_id, enrollment_id,
+    ).await?;
+
+    user.tx.commit().await.map_err(AppError::from)?;
+
+    tracing::info!(
+        tenant_id     = %tenant_id,
+        student_id    = %student_id,
+        enrollment_id = %enrollment_id,
+        "Enrollment dropped"
+    );
+
+    // 204 No Content — the record still exists in the DB but is now 'dropped'
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// POST /sis/enrollments  (cross-module) ────────────────────────────────────────
+
+/// Cross-module enrollment endpoint — touches sis.enrollments AND
+/// lms.section_grade_summaries in one atomic transaction.
+///
+/// This is the primary registrar-facing enrollment workflow. For bulk
+/// imports or self-service registration the same function is reused.
+pub async fn cross_module_enroll(
+    State(_state): State<AppState>,
+    mut user: AuthUser,
+    Json(req): Json<super::write_models::CrossModuleEnrollRequest>,
+) -> Result<impl IntoResponse, AppError> {
+
+    req.validate().map_err(|errs| AppError::BadRequest(errs.join("; ")))?;
+
+    let tenant_id = user.claims.tenant_id;
+
+    let response = super::write_queries::cross_module_enroll(
+        &mut user.tx, tenant_id, &req,
+    ).await?;
+
+    user.tx.commit().await.map_err(AppError::from)?;
+
+    tracing::info!(
+        tenant_id          = %tenant_id,
+        student_id         = %req.student_id,
+        section_id         = %req.section_id,
+        status             = %response.status,
+        enrollment_id      = %response.enrollment_id,
+        lms_summary_id     = %response.lms_grade_summary_id,
+        "Cross-module enrollment created (SIS + LMS)"
+    );
+
+    Ok((StatusCode::CREATED, Json(response)))
 }
