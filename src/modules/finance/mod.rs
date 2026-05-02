@@ -60,12 +60,12 @@ pub fn router() -> Router<AppState> {
             get(handlers::aid::get_fafsa_record))
 
         .route("/students/:student_id/aid-awards",
-            get(handlers::aid::list_student_aid_awards))
-            // .post(handlers::aid::create_aid_award))                    // Step 3
+            get(handlers::aid::list_student_aid_awards)
+           .post(handlers::aid::create_aid_award))
 
         .route("/students/:student_id/aid-awards/:id",
-            get(handlers::aid::get_aid_award))
-            // .patch(handlers::aid::update_aid_award))                   // Step 3
+            get(handlers::aid::get_aid_award)
+           .patch(handlers::aid::update_aid_award))
 
         // Tenant-wide aid award list for the financial aid office
         .route("/aid-awards",
