@@ -1,0 +1,1892 @@
+{
+  "info": {
+    "name": "EduSuite API — HR / LMS / SIS",
+    "description": "Complete test suite for the HR, LMS, and SIS modules.\n\n## Setup\n1. Import this collection into Postman (VS Code extension or desktop app).\n2. Set the **baseUrl** collection variable to `http://localhost:8081/api/v1` (already the default).\n3. Run the **Auth / Login (Hogwarts)** request first — it automatically stores the access token and all seed UUIDs as collection variables.\n4. All subsequent requests use `{{access_token}}` from the collection-level variable store.\n\n## Tenant used\nAll requests authenticate as **Hogwarts School** (`hogwarts.edu`).\n- Admin: `admin_hogwarts` / `password`\n- Staff UUIDs, student UUIDs, section UUIDs, and course UUIDs all come from the seed data.\n\n## Test order\nRequests are ordered to be run top-to-bottom inside each folder. The write tests in each folder depend on reads completing first (IDs are captured by test scripts).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "hogwarts_tenant_id",
+      "value": "a0000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "student_ron_id",
+      "value": "f2000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "student_neville_id",
+      "value": "f2000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "student_luna_id",
+      "value": "f2000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "staff_dumbledore_id",
+      "value": "f1000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "staff_mcgonagall_id",
+      "value": "f1000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "staff_snape_id",
+      "value": "f1000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "staff_lupin_id",
+      "value": "f1000000-0000-0000-0000-000000000004",
+      "type": "string"
+    },
+    {
+      "key": "course_dfda101_id",
+      "value": "f4000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "course_pot101_id",
+      "value": "f4000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "course_magi201_id",
+      "value": "f4000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "section_dfda101_id",
+      "value": "f5000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "section_pot101_id",
+      "value": "f5000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "section_magi201_id",
+      "value": "f5000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "dept_magi_id",
+      "value": "f0000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "dept_dfda_id",
+      "value": "f0000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "dept_pot_id",
+      "value": "f0000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "new_student_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "new_student_username",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "enrollment_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cross_enroll_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "new_staff_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "new_contract_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 — Auth",
+      "item": [
+        {
+          "name": "Login (Hogwarts admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has access_token', () => pm.expect(body.access_token).to.be.a('string'));",
+                  "pm.collectionVariables.set('access_token',  body.access_token);",
+                  "pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "console.log('✅ Token stored. Tenant: Hogwarts School');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin_hogwarts\",\n  \"password\": \"password\",\n  \"domain\":   \"hogwarts.edu\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /auth/me",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Username matches', () => pm.expect(body.username).to.eql('admin_hogwarts'));",
+                  "pm.test('Tenant ID matches', () => pm.expect(body.tenant_id).to.eql(pm.collectionVariables.get('hogwarts_tenant_id')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /auth/refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('New access_token issued', () => pm.expect(body.access_token).to.be.a('string'));",
+                  "pm.collectionVariables.set('access_token',  body.access_token);",
+                  "pm.collectionVariables.set('refresh_token', body.refresh_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — SIS / Students (reads)",
+      "item": [
+        {
+          "name": "GET /sis/students",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(body.data).to.be.an('array'));",
+                  "pm.test('Pagination fields present', () => {",
+                  "  pm.expect(body.page).to.be.a('number');",
+                  "  pm.expect(body.total).to.be.a('number');",
+                  "  pm.expect(body.per_page).to.be.a('number');",
+                  "});",
+                  "pm.test('At least one student returned', () => pm.expect(body.data.length).to.be.above(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/sis/students?page=1&per_page=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /sis/students/:id (Ron Weasley)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Correct student returned', () => {",
+                  "  pm.expect(body.user_id).to.eql(pm.collectionVariables.get('student_ron_id'));",
+                  "  pm.expect(body.last_name).to.eql('Weasley');",
+                  "});",
+                  "pm.test('Has enrollment_year', () => pm.expect(body.enrollment_year).to.be.a('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{student_ron_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{student_ron_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /sis/students/:id (404 — bad UUID)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "const body = pm.response.json();",
+                  "pm.test('Error code is not_found', () => pm.expect(body.error).to.eql('not_found'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /sis/students/:id/enrollments (Ron)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Returns array', () => pm.expect(body).to.be.an('array'));",
+                  "if (body.length > 0) {",
+                  "  pm.test('Enrollment has section_id', () => pm.expect(body[0].section_id).to.be.a('string'));",
+                  "  pm.test('Enrollment has status', () => pm.expect(body[0].status).to.be.a('string'));",
+                  "  pm.collectionVariables.set('enrollment_id', body[0].enrollment_id);",
+                  "  console.log('Stored existing enrollment_id:', body[0].enrollment_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{student_ron_id}}/enrollments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{student_ron_id}}",
+                "enrollments"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — SIS / Students (writes)",
+      "item": [
+        {
+          "name": "POST /sis/students — create Ginny Weasley",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Append a timestamp so this is always a fresh insert on every run.",
+                  "// Stored in new_student_username so the 409 duplicate test below can reuse it.",
+                  "const ts = Date.now();",
+                  "pm.collectionVariables.set('new_student_username', `ginny.weasley_${ts}`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Last name is Weasley', () => pm.expect(body.last_name).to.eql('Weasley'));",
+                  "pm.test('Has user_id', () => pm.expect(body.user_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('new_student_id', body.user_id);",
+                  "console.log('New student_id:', body.user_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\":                 \"{{new_student_username}}\",\n  \"password\":                 \"Quidditch7!\",\n  \"first_name\":               \"Ginny\",\n  \"last_name\":                \"Weasley\",\n  \"institutional_email\":      \"g.weasley@hogwarts.edu\",\n  \"enrollment_year\":          2024,\n  \"expected_graduation_year\": 2028\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/students",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /sis/students — 409 duplicate username",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('Error code is conflict', () => pm.expect(body.error).to.eql('conflict'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\":    \"{{new_student_username}}\",\n  \"password\":    \"Quidditch7!\",\n  \"first_name\":  \"Ginny\",\n  \"last_name\":   \"Weasley\",\n  \"enrollment_year\": 2024\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/students",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /sis/students — 400 missing required field",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('Error code is bad_request', () => pm.expect(body.error).to.eql('bad_request'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"no.lastname\",\n  \"password\": \"password123\",\n  \"first_name\": \"No\",\n  \"enrollment_year\": 2024\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/students",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /sis/students/:id — update Ginny",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "const id = pm.collectionVariables.get('new_student_id');",
+                  "if (!id) throw new Error('new_student_id not set — run POST /sis/students first');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Preferred name updated', () => pm.expect(body.preferred_name).to.eql('Ginerva'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preferred_name\": \"Ginerva\",\n  \"expected_graduation_year\": 2027\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{new_student_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{new_student_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /sis/students/:id — 400 empty body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{new_student_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{new_student_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — SIS / Enrollments (student-scoped)",
+      "item": [
+        {
+          "name": "POST /sis/students/:id/enrollments — enroll Hermione in MAGI 201",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "const id = pm.collectionVariables.get('new_student_id');",
+                  "if (!id) throw new Error('new_student_id not set — run POST /sis/students first');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Status is enrolled or waitlisted', () => {",
+                  "  pm.expect(['enrolled','waitlisted']).to.include(body.status);",
+                  "});",
+                  "pm.test('section_id matches', () => pm.expect(body.section_id).to.eql(pm.collectionVariables.get('section_magi201_id')));",
+                  "pm.test('Has enrollment_id', () => pm.expect(body.enrollment_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('enrollment_id', body.enrollment_id);",
+                  "console.log('New enrollment_id:', body.enrollment_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"section_id\":                \"{{section_magi201_id}}\",\n  \"enrollment_effective_date\": \"2025-01-13\",\n  \"credit_hours_enrolled\":     3.0,\n  \"is_title_iv_eligible\":      true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{new_student_id}}/enrollments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{new_student_id}}",
+                "enrollments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /sis/students/:id/enrollments — 409 duplicate enrollment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('Error is conflict', () => pm.expect(body.error).to.eql('conflict'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"section_id\": \"{{section_magi201_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{new_student_id}}/enrollments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{new_student_id}}",
+                "enrollments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /sis/students/:id/enrollments — 400 invalid status value",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('Error is bad_request', () => pm.expect(body.error).to.eql('bad_request'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"section_id\": \"{{section_dfda101_id}}\",\n  \"status\": \"withdrawn\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{new_student_id}}/enrollments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{new_student_id}}",
+                "enrollments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE /sis/students/:id/enrollments/:eid — drop Hermione from MAGI 201",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "const eid = pm.collectionVariables.get('enrollment_id');",
+                  "if (!eid) throw new Error('enrollment_id not set — run POST enrollment first');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "pm.test('No response body', () => pm.expect(pm.response.text()).to.be.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{new_student_id}}/enrollments/{{enrollment_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{new_student_id}}",
+                "enrollments",
+                "{{enrollment_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE /sis/students/:id/enrollments/:eid — 409 already dropped",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('Error is conflict', () => pm.expect(body.error).to.eql('conflict'));",
+                  "pm.test('Message mentions status', () => pm.expect(body.message).to.include('dropped'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{new_student_id}}/enrollments/{{enrollment_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{new_student_id}}",
+                "enrollments",
+                "{{enrollment_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE /sis/students/:id/enrollments/:eid — 404 wrong student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/sis/students/{{student_neville_id}}/enrollments/{{enrollment_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "students",
+                "{{student_neville_id}}",
+                "enrollments",
+                "{{enrollment_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — SIS / Enrollments (cross-module)",
+      "item": [
+        {
+          "name": "POST /sis/enrollments — enroll Luna in DFDA 101 (SIS + LMS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has enrollment_id', () => pm.expect(body.enrollment_id).to.be.a('string'));",
+                  "pm.test('Has lms_grade_summary_id', () => pm.expect(body.lms_grade_summary_id).to.be.a('string'));",
+                  "pm.test('Both IDs are different UUIDs', () => pm.expect(body.enrollment_id).to.not.eql(body.lms_grade_summary_id));",
+                  "pm.test('Status is enrolled or waitlisted', () => {",
+                  "  pm.expect(['enrolled','waitlisted']).to.include(body.status);",
+                  "});",
+                  "pm.test('student_id matches', () => pm.expect(body.student_id).to.eql(pm.collectionVariables.get('student_luna_id')));",
+                  "pm.collectionVariables.set('cross_enroll_id', body.enrollment_id);",
+                  "console.log('Cross-module enrollment_id:', body.enrollment_id);",
+                  "console.log('LMS grade_summary_id:', body.lms_grade_summary_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\":                \"{{student_luna_id}}\",\n  \"section_id\":                \"{{section_dfda101_id}}\",\n  \"enrollment_effective_date\": \"2025-01-13\",\n  \"credit_hours_enrolled\":     3.0,\n  \"is_title_iv_eligible\":      true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/enrollments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "enrollments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /sis/enrollments — 409 duplicate (Luna in DFDA 101 again)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"{{student_luna_id}}\",\n  \"section_id\": \"{{section_dfda101_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/enrollments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "enrollments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /sis/enrollments — explicit waitlist (Ginny in POT 101)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const id = pm.collectionVariables.get('new_student_id');",
+                  "if (!id) throw new Error('new_student_id not set — run folder 02 first');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Status is waitlisted', () => pm.expect(body.status).to.eql('waitlisted'));",
+                  "pm.test('Has lms_grade_summary_id', () => pm.expect(body.lms_grade_summary_id).to.be.a('string'));",
+                  "pm.test('student_id matches Ginny', () => pm.expect(body.student_id).to.eql(pm.collectionVariables.get('new_student_id')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"{{new_student_id}}\",\n  \"section_id\": \"{{section_pot101_id}}\",\n  \"status\":     \"waitlisted\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/enrollments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "enrollments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /sis/enrollments — 404 unknown student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"section_id\": \"{{section_dfda101_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sis/enrollments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "enrollments"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — SIS / Courses (reads)",
+      "item": [
+        {
+          "name": "GET /sis/courses",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(body.data).to.be.an('array'));",
+                  "pm.test('At least one course returned', () => pm.expect(body.data.length).to.be.above(0));",
+                  "pm.test('First course has subject + course fields', () => {",
+                  "  pm.expect(body.data[0].subject).to.be.a('string');",
+                  "  pm.expect(body.data[0].course).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/sis/courses?page=1&per_page=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "courses"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /sis/courses/:id (DFDA 101)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Subject is DFDA', () => pm.expect(body.subject).to.eql('DFDA'));",
+                  "pm.test('Course number is 101', () => pm.expect(body.course).to.eql('101'));",
+                  "pm.test('Has credits', () => pm.expect(body.credits).to.be.a('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/sis/courses/{{course_dfda101_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "courses",
+                "{{course_dfda101_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /sis/courses/:id/sections (sections for DFDA 101)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(body.data).to.be.an('array'));",
+                  "pm.test('All sections belong to this course', () => {",
+                  "  body.data.forEach(s => {",
+                  "    pm.expect(s.course_id).to.eql(pm.collectionVariables.get('course_dfda101_id'));",
+                  "  });",
+                  "});",
+                  "pm.test('Has pagination fields', () => {",
+                  "  pm.expect(body.total).to.be.a('number');",
+                  "  pm.expect(body.page).to.be.a('number');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/sis/courses/{{course_dfda101_id}}/sections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "courses",
+                "{{course_dfda101_id}}",
+                "sections"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /sis/courses/:id/sections — 404 unknown course",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/sis/courses/00000000-0000-0000-0000-000000000000/sections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "courses",
+                "00000000-0000-0000-0000-000000000000",
+                "sections"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — LMS / Sections (reads)",
+      "item": [
+        {
+          "name": "GET /lms/sections",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(body.data).to.be.an('array'));",
+                  "pm.test('Has pagination', () => pm.expect(body.total).to.be.a('number'));",
+                  "if (body.data.length > 0) {",
+                  "  pm.test('Section has instructor_name', () => pm.expect(body.data[0].instructor_name).to.be.a('string'));",
+                  "  pm.test('Section has enrolled_count', () => pm.expect(body.data[0].enrolled_count).to.be.a('number'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections?page=1&per_page=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /lms/sections — filter by term",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Returns array', () => pm.expect(body.data).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections?is_published=true&per_page=25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections"
+              ],
+              "query": [
+                {
+                  "key": "is_published",
+                  "value": "true"
+                },
+                {
+                  "key": "per_page",
+                  "value": "25"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /lms/sections/:id (DFDA 101 section detail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Correct section returned', () => pm.expect(body.id).to.eql(pm.collectionVariables.get('section_dfda101_id')));",
+                  "pm.test('Has course detail', () => {",
+                  "  pm.expect(body.course_subject).to.eql('DFDA');",
+                  "  pm.expect(body.course_number).to.eql('101');",
+                  "  pm.expect(body.course_credits).to.be.a('number');",
+                  "});",
+                  "pm.test('Has term dates', () => {",
+                  "  pm.expect(body.term_start_date).to.be.a('string');",
+                  "  pm.expect(body.term_end_date).to.be.a('string');",
+                  "});",
+                  "pm.test('Has live counts', () => {",
+                  "  pm.expect(body.enrolled_count).to.be.a('number');",
+                  "  pm.expect(body.waitlisted_count).to.be.a('number');",
+                  "  pm.expect(body.module_count).to.be.a('number');",
+                  "  pm.expect(body.assignment_count).to.be.a('number');",
+                  "});",
+                  "pm.test('Has waitlist_capacity', () => pm.expect(body.waitlist_capacity).to.be.a('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/{{section_dfda101_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "{{section_dfda101_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /lms/sections/:id — 404 unknown section",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "const body = pm.response.json();",
+                  "pm.test('Error code is not_found', () => pm.expect(body.error).to.eql('not_found'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 — HR / Staff (reads)",
+      "item": [
+        {
+          "name": "GET /hr/staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(body.data).to.be.an('array'));",
+                  "pm.test('At least one staff member', () => pm.expect(body.data.length).to.be.above(0));",
+                  "pm.test('First member has hire_date', () => pm.expect(body.data[0].hire_date).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff?page=1&per_page=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /hr/staff/:id (Severus Snape)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Correct staff returned', () => pm.expect(body.last_name).to.eql('Snape'));",
+                  "pm.test('Has user_id', () => pm.expect(body.user_id).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff/{{staff_snape_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff",
+                "{{staff_snape_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /hr/staff/:id — 404 unknown staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 — HR / Staff (writes)",
+      "item": [
+        {
+          "name": "POST /hr/staff — create Nymphadora Tonks",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Last name is Tonks', () => pm.expect(body.last_name).to.eql('Tonks'));",
+                  "pm.test('Has user_id', () => pm.expect(body.user_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('new_staff_id', body.user_id);",
+                  "console.log('New staff_id:', body.user_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\":              \"nymphadora.tonks\",\n  \"password\":              \"Metamorphmagus1!\",\n  \"first_name\":            \"Nymphadora\",\n  \"last_name\":             \"Tonks\",\n  \"preferred_name\":        \"Tonks\",\n  \"institutional_email\":   \"n.tonks@hogwarts.edu\",\n  \"primary_department_id\": \"{{dept_dfda_id}}\",\n  \"hire_date\":             \"2025-01-06\",\n  \"is_tenured\":            false,\n  \"contract\": {\n    \"contract_type\":  \"salaried\",\n    \"start_date\":     \"2025-01-06\",\n    \"job_title\":      \"Auror Instructor\",\n    \"annual_salary\":  62000.00\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /hr/staff/:id — update Tonks department",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "const id = pm.collectionVariables.get('new_staff_id');",
+                  "if (!id) throw new Error('new_staff_id not set — run POST /hr/staff first');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has user_id', () => pm.expect(body.user_id).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"primary_department_id\": \"{{dept_magi_id}}\",\n  \"is_tenured\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff/{{new_staff_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff",
+                "{{new_staff_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /hr/staff/:id — 400 empty body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff/{{new_staff_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff",
+                "{{new_staff_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 — HR / Contracts",
+      "item": [
+        {
+          "name": "POST /hr/staff/:id/contracts — new salaried contract (deactivates existing)",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "const id = pm.collectionVariables.get('new_staff_id');",
+                  "if (!id) throw new Error('new_staff_id not set — run POST /hr/staff first');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has contract_id', () => pm.expect(body.contract_id).to.be.a('string'));",
+                  "pm.test('is_active is true', () => pm.expect(body.is_active).to.be.true);",
+                  "pm.test('contract_type is salaried', () => pm.expect(body.contract_type).to.eql('salaried'));",
+                  "pm.test('Has start_date', () => pm.expect(body.start_date).to.be.a('string'));",
+                  "pm.test('annual_salary matches', () => pm.expect(body.annual_salary).to.be.closeTo(68000.00, 0.01));",
+                  "pm.collectionVariables.set('new_contract_id', body.contract_id);",
+                  "console.log('New contract_id:', body.contract_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contract_type\":       \"salaried\",\n  \"start_date\":          \"2025-08-01\",\n  \"job_title\":           \"Senior Auror Instructor\",\n  \"annual_salary\":       68000.00,\n  \"deactivate_existing\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff/{{new_staff_id}}/contracts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff",
+                "{{new_staff_id}}",
+                "contracts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /hr/staff/:id/contracts — adjunct stipend (keep existing active)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('contract_type is adjunct', () => pm.expect(body.contract_type).to.eql('adjunct'));",
+                  "pm.test('is_active is true', () => pm.expect(body.is_active).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contract_type\":       \"adjunct\",\n  \"start_date\":          \"2025-09-01\",\n  \"end_date\":            \"2025-12-20\",\n  \"job_title\":           \"Dueling Club Advisor (Stipend)\",\n  \"annual_salary\":       3500.00,\n  \"deactivate_existing\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff/{{new_staff_id}}/contracts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff",
+                "{{new_staff_id}}",
+                "contracts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /hr/staff/:id/contracts — 400 invalid contract_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('Error is bad_request', () => pm.expect(body.error).to.eql('bad_request'));",
+                  "pm.test('Message mentions contract_type', () => pm.expect(body.message).to.include('contract_type'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contract_type\": \"permanent\",\n  \"start_date\":    \"2025-08-01\",\n  \"job_title\":     \"Bad Contract Type\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff/{{new_staff_id}}/contracts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff",
+                "{{new_staff_id}}",
+                "contracts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /hr/staff/:id/contracts — 400 end_date before start_date",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('Message mentions end_date', () => pm.expect(body.message).to.include('end_date'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contract_type\": \"hourly\",\n  \"start_date\":    \"2025-12-01\",\n  \"end_date\":      \"2025-01-01\",\n  \"job_title\":     \"Time Traveller Role\",\n  \"hourly_rate\":   25.00\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff/{{new_staff_id}}/contracts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff",
+                "{{new_staff_id}}",
+                "contracts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /hr/staff/:id/contracts — 404 unknown staff member",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contract_type\": \"salaried\",\n  \"start_date\":    \"2025-08-01\",\n  \"job_title\":     \"Ghost Professor\",\n  \"annual_salary\": 0.00\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hr/staff/00000000-0000-0000-0000-000000000000/contracts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "hr",
+                "staff",
+                "00000000-0000-0000-0000-000000000000",
+                "contracts"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 — Auth / Cleanup",
+      "item": [
+        {
+          "name": "POST /auth/logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "pm.collectionVariables.set('access_token', '');",
+                  "pm.collectionVariables.set('refresh_token', '');",
+                  "console.log('✅ Session revoked. Tokens cleared.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
