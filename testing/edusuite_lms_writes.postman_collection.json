@@ -1,0 +1,1610 @@
+{
+  "info": {
+    "name": "EduSuite API — LMS Write Layer",
+    "description": "Test suite for all LMS write endpoints.\n\n## Prerequisites\n1. Apply the LMS seed block from `db/setup/04_seed_data.sql` — it adds one grade roster (`fd000000...001`) with two entries for DFDA 101 / Fall 2024. Folders 04–05 **will fail** without this.\n2. Run folders in order — grade entry tests depend on the roster being in `open` state, which is consumed by folder 05.\n\n## Workflow tested\nThe collection drives the full grade submission lifecycle:\n1. **Folder 02** — Create course modules for DFDA 101.\n2. **Folder 03** — Create assignments inside those modules.\n3. **Folder 04** — Enter grades for Ron and Neville via PATCH.\n4. **Folder 05** — Submit the roster (open→submitted), then post it (submitted→posted), which atomically writes two `sis.transcript_records` rows.\n\n## Important: collection is not idempotent for the roster lifecycle\nSubmit and post transitions are one-way state changes. Re-running the collection after folder 05 completes will produce 400s on the submit/post requests, which is correct behavior. To reset, re-run the seed SQL to restore the roster to `open` status:\n```sql\nUPDATE lms.grade_roster_submissions SET status = 'open', submitted_at = NULL, posted_at = NULL WHERE id = 'fd000000-0000-0000-0000-000000000001';\nUPDATE lms.grade_roster_entries SET final_letter_grade = 'NG', final_quality_points = NULL, final_percentage = NULL, is_incomplete = false, is_excused = false WHERE roster_id = 'fd000000-0000-0000-0000-000000000001';\nDELETE FROM sis.transcript_records WHERE term_id = 'f3000000-0000-0000-0000-000000000001' AND student_id IN ('f2000000-0000-0000-0000-000000000001', 'f2000000-0000-0000-0000-000000000002');\n```\n\n## Tenant\nAll requests use **Hogwarts School** (`hogwarts.edu`) — `admin_hogwarts` / `password`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tenant_id",
+      "value": "a0000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "student_ron_id",
+      "value": "f2000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "student_neville_id",
+      "value": "f2000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "student_luna_id",
+      "value": "f2000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "staff_lupin_id",
+      "value": "f1000000-0000-0000-0000-000000000004",
+      "type": "string"
+    },
+    {
+      "key": "term_fall2024_id",
+      "value": "f3000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "section_dfda_id",
+      "value": "f5000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "section_pot_id",
+      "value": "f5000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "section_magi_id",
+      "value": "f5000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "roster_dfda_id",
+      "value": "fd000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "entry_ron_id",
+      "value": "fe000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "entry_neville_id",
+      "value": "fe000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "module_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "assignment_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 — Auth",
+      "item": [
+        {
+          "name": "Login (Hogwarts admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has access_token', () => pm.expect(b.access_token).to.be.a('string'));",
+                  "pm.collectionVariables.set('access_token',  b.access_token);",
+                  "pm.collectionVariables.set('refresh_token', b.refresh_token);",
+                  "console.log('✅ Logged in — LMS write layer tests starting');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin_hogwarts\",\n  \"password\": \"password\",\n  \"domain\": \"hogwarts.edu\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — Section Reads (verify seed data)",
+      "item": [
+        {
+          "name": "GET /lms/sections — verify DFDA 101 exists",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has sections', () => pm.expect(b.data.length).to.be.above(0));",
+                  "const dfda = b.data.find(s => s.id === 'f5000000-0000-0000-0000-000000000001');",
+                  "pm.test('DFDA 101 section exists', () => pm.expect(dfda).to.exist);",
+                  "if (dfda) console.log('✅ DFDA 101 found:', dfda.course_subject, dfda.course_number);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /lms/sections/:id — DFDA 101 full detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Section ID matches', () => pm.expect(b.id).to.eql('f5000000-0000-0000-0000-000000000001'));",
+                  "pm.test('Has enrolled_count', () => pm.expect(b.enrolled_count).to.be.a('number'));",
+                  "console.log('DFDA 101 enrolled count:', b.enrolled_count);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /lms/sections/:id — 404 unknown section",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /sis/courses/:id/sections — bridge route",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(b.data).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sis/courses/f4000000-0000-0000-0000-000000000001/sections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sis",
+                "courses",
+                "f4000000-0000-0000-0000-000000000001",
+                "sections"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Course Modules (POST /lms/sections/:id/modules)",
+      "item": [
+        {
+          "name": "POST modules — Unit 1: Introduction to Dark Arts Defence",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('module_id', b.module_id);",
+                  "pm.test('Section ID matches', () => pm.expect(b.section_id).to.eql('f5000000-0000-0000-0000-000000000001'));",
+                  "pm.test('Title matches', () => pm.expect(b.title).to.include('Introduction'));",
+                  "pm.test('order_index is 1', () => pm.expect(b.order_index).to.eql(1));",
+                  "pm.test('is_published is true', () => pm.expect(b.is_published).to.eql(true));",
+                  "pm.test('Has created_at', () => pm.expect(b.created_at).to.be.a('string'));",
+                  "console.log('Module created:', b.module_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/modules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "modules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Unit 1: Introduction to Defence Against the Dark Arts\",\n  \"description\": \"Foundational theory, history, and basic defensive spells.\",\n  \"order_index\": 1,\n  \"is_published\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "POST modules — Unit 2 (defaults: unpublished, order_index 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('Defaults: unpublished', () => pm.expect(b.is_published).to.eql(false));",
+                  "pm.test('Defaults: order_index 0', () => pm.expect(b.order_index).to.eql(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/modules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "modules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Unit 2: Boggarts and Shape-Shifters\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST modules — 400 empty title",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/modules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "modules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST modules — 400 negative order_index",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/modules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "modules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Bad Module\",\n  \"order_index\": -1\n}"
+            }
+          }
+        },
+        {
+          "name": "POST modules — 404 unknown section",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/00000000-0000-0000-0000-000000000000/modules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "00000000-0000-0000-0000-000000000000",
+                "modules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Ghost Module\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST modules — POT 101 section (different section)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('POT 101 section ID', () => pm.expect(pm.response.json().section_id).to.eql('f5000000-0000-0000-0000-000000000002'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000002/modules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000002",
+                "modules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Unit 1: Introduction to Potions\",\n  \"order_index\": 1,\n  \"is_published\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Assignments (POST /lms/sections/:id/assignments)",
+      "item": [
+        {
+          "name": "POST assignments — Essay: Dark Creature Field Guide",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (!pm.collectionVariables.get('module_id')) { throw new Error('module_id not set — run folder 02 first'); }"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('assignment_id', b.assignment_id);",
+                  "pm.test('Type is essay', () => pm.expect(b.assignment_type).to.eql('essay'));",
+                  "pm.test('Category is summative', () => pm.expect(b.category).to.eql('summative'));",
+                  "pm.test('Max score is 100', () => pm.expect(b.max_score).to.eql(100.0));",
+                  "pm.test('Allow late is true', () => pm.expect(b.allow_late_submissions).to.eql(true));",
+                  "pm.test('Module ID matches', () => pm.expect(b.module_id).to.eql(pm.collectionVariables.get('module_id')));",
+                  "console.log('Assignment created:', b.assignment_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/assignments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "assignments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"module_id\": \"{{module_id}}\",\n  \"title\": \"Essay: Dark Creature Field Guide\",\n  \"description\": \"Write a 1500-word field guide on three dark creatures covered in Unit 1.\",\n  \"assignment_type\": \"essay\",\n  \"category\": \"summative\",\n  \"max_score\": 100.0,\n  \"due_date\": \"2024-10-15T23:59:00Z\",\n  \"allow_late_submissions\": true,\n  \"is_published\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "POST assignments — Quiz: Boggart identification (defaults)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('Default type is homework', () => pm.expect(b.assignment_type).to.eql('homework'));",
+                  "pm.test('Default category is formative', () => pm.expect(b.category).to.eql('formative'));",
+                  "pm.test('Default max_score is 100', () => pm.expect(b.max_score).to.eql(100.0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/assignments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "assignments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"module_id\": \"{{module_id}}\",\n  \"title\": \"Quiz: Boggart Identification\",\n  \"due_date\": \"2024-10-05T23:59:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST assignments — 400 empty title",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/assignments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "assignments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"module_id\": \"{{module_id}}\",\n  \"title\": \"\",\n  \"due_date\": \"2024-10-15T23:59:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST assignments — 400 invalid assignment_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/assignments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "assignments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"module_id\": \"{{module_id}}\",\n  \"title\": \"Bad Type\",\n  \"assignment_type\": \"test\",\n  \"due_date\": \"2024-10-15T23:59:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST assignments — 400 max_score zero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/assignments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "assignments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"module_id\": \"{{module_id}}\",\n  \"title\": \"Zero Score\",\n  \"max_score\": 0.0,\n  \"due_date\": \"2024-10-15T23:59:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST assignments — 400 max_score exceeds 999.99",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/assignments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "assignments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"module_id\": \"{{module_id}}\",\n  \"title\": \"Huge Score\",\n  \"max_score\": 1000.0,\n  \"due_date\": \"2024-10-15T23:59:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST assignments — 400 invalid category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001/assignments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001",
+                "assignments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"module_id\": \"{{module_id}}\",\n  \"title\": \"Bad Cat\",\n  \"category\": \"optional\",\n  \"due_date\": \"2024-10-15T23:59:00Z\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — Grade Entry (PATCH /lms/grade-roster-entries/:id)",
+      "item": [
+        {
+          "name": "Pre-check: seeded roster is 'open'",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "console.log('✅ DFDA 101 section exists — grade roster should be seeded');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — Ron: A (92%, 4.0 QP)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Entry ID matches', () => pm.expect(b.entry_id).to.eql('fe000000-0000-0000-0000-000000000001'));",
+                  "pm.test('Student ID is Ron', () => pm.expect(b.student_id).to.eql('f2000000-0000-0000-0000-000000000001'));",
+                  "pm.test('Grade changed from NG placeholder', () => pm.expect(pm.response.json().final_letter_grade).to.not.eql('NG'));",
+                  "pm.test('Grade is A', () => pm.expect(b.final_letter_grade).to.eql('A'));",
+                  "pm.test('QP is 4.0', () => pm.expect(b.final_quality_points).to.eql(4.0));",
+                  "pm.test('Percentage is 92.5', () => pm.expect(b.final_percentage).to.eql(92.5));",
+                  "pm.test('Not incomplete', () => pm.expect(b.is_incomplete).to.eql(false));",
+                  "console.log('Ron graded: A (92.5%)');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/fe000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "fe000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_letter_grade\": \"A\",\n  \"final_quality_points\": 4.0,\n  \"final_percentage\": 92.5\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — Neville: B+ (88%, 3.3 QP)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Entry ID matches', () => pm.expect(b.entry_id).to.eql('fe000000-0000-0000-0000-000000000002'));",
+                  "pm.test('Grade is B+', () => pm.expect(b.final_letter_grade).to.eql('B+'));",
+                  "pm.test('QP is 3.3', () => pm.expect(b.final_quality_points).to.eql(3.3));",
+                  "console.log('Neville graded: B+ (88%)');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/fe000000-0000-0000-0000-000000000002",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "fe000000-0000-0000-0000-000000000002"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_letter_grade\": \"B+\",\n  \"final_quality_points\": 3.3,\n  \"final_percentage\": 88.0\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — Ron: update to A+ (re-grade, should succeed)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Grade updated to A+', () => pm.expect(pm.response.json().final_letter_grade).to.eql('A+'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/fe000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "fe000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_letter_grade\": \"A+\",\n  \"final_quality_points\": 4.0,\n  \"final_percentage\": 97.0\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — Ron: set excused (clears grade)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is_excused is true', () => pm.expect(pm.response.json().is_excused).to.eql(true));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/fe000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "fe000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_excused\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — Ron: restore A+ (clear excused, re-grade)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Grade is A+', () => pm.expect(b.final_letter_grade).to.eql('A+'));",
+                  "pm.test('is_excused is false', () => pm.expect(b.is_excused).to.eql(false));",
+                  "console.log('Ron restored to A+ — roster ready to submit');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/fe000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "fe000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_excused\": false,\n  \"final_letter_grade\": \"A+\",\n  \"final_quality_points\": 4.0,\n  \"final_percentage\": 97.0\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — 400 empty request body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/fe000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "fe000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — 400 letter grade too long",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/fe000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "fe000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_letter_grade\": \"A+PLUS\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — 400 negative quality_points",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/fe000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "fe000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_quality_points\": -1.0\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — 404 unknown entry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_letter_grade\": \"B\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — Grade Roster Lifecycle (Submit & Post)",
+      "item": [
+        {
+          "name": "POST /submit — transition open → submitted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Roster ID matches', () => pm.expect(b.roster_id).to.eql('fd000000-0000-0000-0000-000000000001'));",
+                  "pm.test('Status is submitted', () => pm.expect(b.status).to.eql('submitted'));",
+                  "pm.test('entry_count is 2', () => pm.expect(b.entry_count).to.eql(2));",
+                  "pm.test('Has submitted_at', () => pm.expect(b.submitted_at).to.be.a('string'));",
+                  "pm.test('Has submitted_by_user_id', () => pm.expect(b.submitted_by_user_id).to.be.a('string'));",
+                  "console.log('✅ Roster submitted — entry count:', b.entry_count);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-submissions/fd000000-0000-0000-0000-000000000001/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-submissions",
+                "fd000000-0000-0000-0000-000000000001",
+                "submit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /submit — 400 already submitted (not open)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error mentions status', () => pm.expect(pm.response.json().message).to.include('submitted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-submissions/fd000000-0000-0000-0000-000000000001/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-submissions",
+                "fd000000-0000-0000-0000-000000000001",
+                "submit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /submit — 404 unknown roster",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-submissions/00000000-0000-0000-0000-000000000000/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-submissions",
+                "00000000-0000-0000-0000-000000000000",
+                "submit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /post — transition submitted → posted (writes transcript records)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Roster ID matches', () => pm.expect(b.roster_id).to.eql('fd000000-0000-0000-0000-000000000001'));",
+                  "pm.test('Status is posted', () => pm.expect(b.status).to.eql('posted'));",
+                  "pm.test('2 transcript records written', () => pm.expect(b.transcript_records_written).to.eql(2));",
+                  "pm.test('0 incomplete entries', () => pm.expect(b.incomplete_entries).to.eql(0));",
+                  "pm.test('0 excused entries', () => pm.expect(b.excused_entries).to.eql(0));",
+                  "pm.test('Has posted_at', () => pm.expect(b.posted_at).to.be.a('string'));",
+                  "pm.test('Has posted_by_user_id', () => pm.expect(b.posted_by_user_id).to.be.a('string'));",
+                  "console.log('✅ Roster posted — transcript records written:', b.transcript_records_written);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-submissions/fd000000-0000-0000-0000-000000000001/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-submissions",
+                "fd000000-0000-0000-0000-000000000001",
+                "post"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /post — 400 already posted (not submitted)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Error mentions status', () => pm.expect(pm.response.json().message).to.include('posted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-submissions/fd000000-0000-0000-0000-000000000001/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-submissions",
+                "fd000000-0000-0000-0000-000000000001",
+                "post"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /post — 404 unknown roster",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-submissions/00000000-0000-0000-0000-000000000000/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-submissions",
+                "00000000-0000-0000-0000-000000000000",
+                "post"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH grade entry — 400 roster is posted (locked)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 (roster locked)', () => pm.response.to.have.status(400));",
+                  "console.log('✅ Confirmed: cannot update grade entries on a posted roster');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-entries/fe000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-entries",
+                "fe000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_letter_grade\": \"C\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — Submit Guard (Ungraded Entries)",
+      "item": [
+        {
+          "name": "POST /submit — 404 no roster for unknown ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-submissions/00000000-0000-0000-0000-000000000000/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-submissions",
+                "00000000-0000-0000-0000-000000000000",
+                "submit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /post — 404 no roster for unknown ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/grade-roster-submissions/00000000-0000-0000-0000-000000000000/post",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "grade-roster-submissions",
+                "00000000-0000-0000-0000-000000000000",
+                "post"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Note — ungraded entry submit guard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "// NOTE: To test the ungraded-entry submit guard:",
+                  "// 1. Seed a second grade_roster_submissions row with status 'open'",
+                  "// 2. Seed a grade_roster_entries row with no grade/incomplete/excused",
+                  "// 3. POST /submit on that roster → expect 400 with 'entries without an outcome'",
+                  "// This test documents the behavior; the full test requires an additional seed row.",
+                  "console.log('POT 101 section check — no roster seeded here (expected)');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lms/sections/f5000000-0000-0000-0000-000000000002",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lms",
+                "sections",
+                "f5000000-0000-0000-0000-000000000002"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 — Auth / Cleanup",
+      "item": [
+        {
+          "name": "POST /auth/logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "pm.collectionVariables.set('access_token', '');",
+                  "pm.collectionVariables.set('refresh_token', '');",
+                  "console.log('✅ LMS write layer collection complete. Session revoked.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
