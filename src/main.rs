@@ -133,6 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/policy",   modules::policy::router())
         .nest("/reference",modules::reference::router())
         .nest("/sis",      modules::sis::router())
+        .nest("/sis",      modules::lms::sis_bridge_router())
         .nest("/workflow", modules::workflow::router())
         // ── JWT middleware (activate once first domain handlers are built) ─
         // .route_layer(middleware::from_fn_with_state(

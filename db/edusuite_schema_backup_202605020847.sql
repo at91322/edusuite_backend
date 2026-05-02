@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Poe2tdsamRqWTktc8pD1fXeA93aQrnsBrfiH8bhryP7Z8QbaAalpALC7EOvTsX0
+\restrict lMz98s6jlkudoNQL2UN1NrA794zzJxIhcAcUGjKwruAM5e9RROzfbaEZrYnhrWN
 
 -- Dumped from database version 18.3
 -- Dumped by pg_dump version 18.3
@@ -2221,7 +2221,8 @@ ALTER TYPE hr.application_status OWNER TO postgres;
 CREATE TYPE hr.contract_type AS ENUM (
     'salaried',
     'hourly',
-    'stipend'
+    'stipend',
+    'adjunct'
 );
 
 
@@ -69511,5 +69512,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA workflow GRANT SELECT,INSER
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Poe2tdsamRqWTktc8pD1fXeA93aQrnsBrfiH8bhryP7Z8QbaAalpALC7EOvTsX0
+\unrestrict lMz98s6jlkudoNQL2UN1NrA794zzJxIhcAcUGjKwruAM5e9RROzfbaEZrYnhrWN
 
