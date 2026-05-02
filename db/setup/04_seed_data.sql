@@ -29,6 +29,11 @@ ALTER TABLE sis.academic_terms      DISABLE TRIGGER ALL;
 ALTER TABLE sis.courses             DISABLE TRIGGER ALL;
 ALTER TABLE sis.course_sections     DISABLE TRIGGER ALL;
 ALTER TABLE sis.enrollments         DISABLE TRIGGER ALL;
+ALTER TABLE finance.gl_accounts     DISABLE TRIGGER ALL;
+ALTER TABLE finance.fiscal_years    DISABLE TRIGGER ALL;
+ALTER TABLE lms.grade_roster_submissions DISABLE TRIGGER ALL;
+ALTER TABLE lms.grade_roster_entries     DISABLE TRIGGER ALL;
+
 
 -- ── oauth_clients: platform client (required for token_families FK) ───────────
 INSERT INTO auth_governance.oauth_clients
@@ -242,6 +247,68 @@ INSERT INTO sis.enrollments (id, tenant_id, student_id, section_id, status, cred
     ('f8000000-0000-0000-0000-000000000013','a0000000-0000-0000-0000-000000000002','f2000000-0000-0000-0000-000000000006','f5000000-0000-0000-0000-000000000005','enrolled',3.0)
 ON CONFLICT (id) DO NOTHING;
 
+-- FINANCE: GL ACCOUNTS
+INSERT INTO finance.gl_accounts
+    (id, tenant_id, account_number, account_name, type,
+     normal_balance, is_active, description)
+VALUES
+    ('fa000000-0000-0000-0000-000000000001',
+     'a0000000-0000-0000-0000-000000000003',
+     '1200',
+     'Student Accounts Receivable',
+     'asset',
+     'debit',
+     true,
+     'Primary student billing AR account for tuition, fees, and aid disbursements')
+ON CONFLICT (id) DO NOTHING;
+
+-- FINANCE: FISCAL YEARS
+ALTER TABLE finance.fiscal_years DISABLE TRIGGER ALL;
+
+INSERT INTO finance.fiscal_years
+    (id, tenant_id, name, start_date, end_date, status)
+VALUES
+    ('fb000000-0000-0000-0000-000000000001',
+     'a0000000-0000-0000-0000-000000000003',
+     'FY2025',
+     '2024-07-01',
+     '2025-06-30',
+     'active')
+ON CONFLICT (id) DO NOTHING;
+
+-- LMS: GRADE ROSTER SUBMISSION
+INSERT INTO lms.grade_roster_submissions
+    (id, tenant_id, section_id, term_id, status)
+VALUES
+    ('fd000000-0000-0000-0000-000000000001',
+     'a0000000-0000-0000-0000-000000000003',
+     'f5000000-0000-0000-0000-000000000001',  -- Section: DFDA 101
+     'f3000000-0000-0000-0000-000000000001',  -- Term: Fall 2024
+     'open')
+ON CONFLICT (id) DO NOTHING;
+
+-- LMS: GRADE ROSTER ENTRIES
+INSERT INTO lms.grade_roster_entries
+    (id, tenant_id, roster_id, enrollment_id, student_id,
+     final_letter_grade, is_incomplete, is_excused, is_registrar_override)
+VALUES
+    -- Ron Weasley — enrollment f8000000-...006
+    ('fe000000-0000-0000-0000-000000000001',
+     'a0000000-0000-0000-0000-000000000003',
+     'fd000000-0000-0000-0000-000000000001',
+     'f8000000-0000-0000-0000-000000000006',
+     'f2000000-0000-0000-0000-000000000001',
+     'NG', false, false, false),
+
+    -- Neville Longbottom — enrollment f8000000-...003
+    ('fe000000-0000-0000-0000-000000000002',
+     'a0000000-0000-0000-0000-000000000003',
+     'fd000000-0000-0000-0000-000000000001',
+     'f8000000-0000-0000-0000-000000000003',
+     'f2000000-0000-0000-0000-000000000002',
+     'NG', false, false, false)
+ON CONFLICT (id) DO NOTHING;
+
 -- Re-enable audit triggers
 ALTER TABLE core.users ENABLE TRIGGER ALL;
 ALTER TABLE core.tenant_memberships ENABLE TRIGGER ALL;
@@ -254,6 +321,10 @@ ALTER TABLE sis.academic_terms      DISABLE TRIGGER ALL;
 ALTER TABLE sis.courses             DISABLE TRIGGER ALL;
 ALTER TABLE sis.course_sections     DISABLE TRIGGER ALL;
 ALTER TABLE sis.enrollments         DISABLE TRIGGER ALL;
+ALTER TABLE finance.gl_accounts     ENABLE TRIGGER ALL;
+ALTER TABLE finance.fiscal_years    ENABLE TRIGGER ALL;
+ALTER TABLE lms.grade_roster_submissions ENABLE TRIGGER ALL;
+ALTER TABLE lms.grade_roster_entries     ENABLE TRIGGER ALL;
 
 COMMIT;
 
