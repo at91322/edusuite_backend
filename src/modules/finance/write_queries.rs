@@ -371,7 +371,7 @@ pub async fn set_hold(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 use super::write_models::{
-    AidAwardResponse, CreateAidAwardRequest, VALID_NSLDS_LOAN_TYPES,
+    AidAwardResponse, CreateAidAwardRequest,
     UpdateAidAwardRequest,
 };
 
@@ -914,7 +914,7 @@ pub async fn create_sap_appeal(
         r#"
         INSERT INTO workflow.submissions
             (tenant_id, form_id, initiator_user_id, payload_data, status)
-        VALUES ($1, $2, $3, $4, 'submitted')
+        VALUES ($1, $2, $3, $4, 'routing')
         RETURNING id
         "#,
         tenant_id,

@@ -85,20 +85,20 @@ pub fn router() -> Router<AppState> {
             get(handlers::sap::get_sap_evaluation))
 
         .route("/students/:student_id/sap/:id/appeal",
-            get(handlers::sap::get_sap_appeal))
-           .post(handlers::sap::create_sap_appeal)
+            get(handlers::sap::get_sap_appeal)
+           .post(handlers::sap::create_sap_appeal))
 
         // ── Group 4: VA Benefits ──────────────────────────────────────────
         .route("/students/:student_id/veteran-profile",
             get(handlers::va::get_veteran_profile))
 
         .route("/students/:student_id/va-certifications",
-            get(handlers::va::list_va_certifications))
-           .post(handlers::va::create_va_certification)
+            get(handlers::va::list_va_certifications)
+           .post(handlers::va::create_va_certification))
 
         .route("/students/:student_id/va-certifications/:id",
-            get(handlers::va::get_va_certification))
-           .patch(handlers::va::amend_va_certification)
+            get(handlers::va::get_va_certification)
+           .patch(handlers::va::amend_va_certification))
 
         // ── Group 5: Payroll / Staff Pay ──────────────────────────────────
         .route("/payroll/runs",
