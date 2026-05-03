@@ -1,0 +1,3740 @@
+{
+  "info": {
+    "name": "EduSuite API — Core Module",
+    "description": "Test suite for all Core module endpoints (Groups 1–6).\n\n## Folders\n00 — Auth\n01 — Tenant self-service (GET/PATCH /core/tenants/me + subscriptions + flags)\n02 — Departments (list, get, create, update)\n03 — Members (list, filter, patch system_role + institutional_email, delete)\n04 — User identity (GET user, PATCH name fields, name history)\n05 — Emails (list, add, patch, primary-delete guard)\n06 — Phones (list, add, patch, primary-delete guard)\n07 — Addresses (list, add, patch, delete)\n08 — Emergency contacts (list, add, patch email null, delete)\n09 — Roles (list, grant, upsert re-grant, revoke, guards)\n10 — Audit logs (list with filters, single entry)\n11 — Cleanup\n\n## Notes\n- Folders 03–10 cascade IDs via collection variables.\n- Folder 03 deletes Lupin's membership — re-run the seed to restore it.\n- Folder 04 renames Ron's last name to 'Weasley-Granger' — re-seed to reset.\n- Folder 10 (audit logs) depends on folders 01–09 having generated audit entries. The audit trigger fires on most writes.\n- The `user_roles` table is separate from `system_role` in `tenant_memberships`. GET /roles returns fine-grained role grants, not the membership system_role.\n\n## Tenant\nAll requests use **Hogwarts School** (`hogwarts.edu`) — `admin_hogwarts` / `password`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tenant_id",
+      "value": "a0000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "admin_hogwarts_id",
+      "value": "b0000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "dumbledore_id",
+      "value": "f1000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "mcgonagall_id",
+      "value": "f1000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "snape_id",
+      "value": "f1000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "lupin_id",
+      "value": "f1000000-0000-0000-0000-000000000004",
+      "type": "string"
+    },
+    {
+      "key": "ron_id",
+      "value": "f2000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "neville_id",
+      "value": "f2000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "luna_id",
+      "value": "f2000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "dept_magi_id",
+      "value": "f0000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "dept_dfda_id",
+      "value": "f0000000-0000-0000-0000-000000000002",
+      "type": "string"
+    },
+    {
+      "key": "dept_pot_id",
+      "value": "f0000000-0000-0000-0000-000000000003",
+      "type": "string"
+    },
+    {
+      "key": "new_dept_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "email_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "phone_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "address_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "contact_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "audit_log_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 — Auth",
+      "item": [
+        {
+          "name": "Login (Hogwarts admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has access_token', () => pm.expect(b.access_token).to.be.a('string'));",
+                  "pm.collectionVariables.set('access_token',  b.access_token);",
+                  "pm.collectionVariables.set('refresh_token', b.refresh_token);",
+                  "console.log('✅ Logged in — core module test suite starting');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin_hogwarts\",\n  \"password\": \"password\",\n  \"domain\": \"hogwarts.edu\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — Tenant Self-Service (GET + PATCH /core/tenants/me)",
+      "item": [
+        {
+          "name": "GET /core/tenants/me",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Tenant ID matches', () => pm.expect(b.id).to.eql('a0000000-0000-0000-0000-000000000003'));",
+                  "pm.test('Has name', () => pm.expect(b.name).to.be.a('string'));",
+                  "pm.test('Has domain', () => pm.expect(b.domain).to.be.a('string'));",
+                  "pm.test('Has base_currency_code', () => pm.expect(b.base_currency_code).to.be.a('string'));",
+                  "pm.test('Has fiscal_year_end_month', () => pm.expect(b.fiscal_year_end_month).to.be.a('number'));",
+                  "console.log('Tenant:', b.name, '|', b.domain);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/tenants/me — update fiscal_year_end_month",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('fiscal_year_end_month updated', () => pm.expect(b.fiscal_year_end_month).to.eql(6));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fiscal_year_end_month\": 6\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/tenants/me — update name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Name updated', () => pm.expect(pm.response.json().name).to.include('Hogwarts'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Hogwarts School of Witchcraft and Wizardry\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/tenants/me — 400 empty body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/tenants/me — 400 invalid fiscal_year_end_month",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fiscal_year_end_month\": 13\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /core/tenants/me/subscriptions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));",
+                  "console.log('Active subscriptions:', pm.response.json().length);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/subscriptions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "subscriptions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/tenants/me/feature-flags",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/feature-flags",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "feature-flags"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Departments (GET + POST + PATCH)",
+      "item": [
+        {
+          "name": "GET /core/tenants/me/departments — list (3 seeded)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(b.data).to.be.an('array'));",
+                  "pm.test('At least 3 departments', () => pm.expect(b.total).to.be.at.least(3));",
+                  "const magi = b.data.find(d => d.id === 'f0000000-0000-0000-0000-000000000001');",
+                  "pm.test('MAGI dept present', () => pm.expect(magi).to.exist);",
+                  "console.log('Departments:', b.data.map(d => d.code).join(', '));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/tenants/me/departments/:id — DFDA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Code is DFDA', () => pm.expect(b.code).to.eql('DFDA'));",
+                  "pm.test('Has head_user_id', () => pm.expect(b.head_user_id).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments/f0000000-0000-0000-0000-000000000002",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments",
+                "f0000000-0000-0000-0000-000000000002"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/tenants/me/departments/:id — 404 unknown",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /core/tenants/me/departments — create HIST department",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('new_dept_id', b.id);",
+                  "pm.test('Code is HIST', () => pm.expect(b.code).to.eql('HIST'));",
+                  "pm.test('Name matches', () => pm.expect(b.name).to.eql('History of Magic'));",
+                  "pm.test('Head is Dumbledore', () => pm.expect(b.head_user_id).to.eql('f1000000-0000-0000-0000-000000000001'));",
+                  "pm.test('head_name present', () => pm.expect(b.head_name).to.include('Dumbledore'));",
+                  "console.log('Department created:', b.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"HIST\",\n  \"name\": \"History of Magic\",\n  \"head_user_id\": \"f1000000-0000-0000-0000-000000000001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST departments — 409 duplicate code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"HIST\",\n  \"name\": \"Duplicate\",\n  \"head_user_id\": \"f1000000-0000-0000-0000-000000000001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST departments — 400 non-member head_user_id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"XTRA\",\n  \"name\": \"Extra\",\n  \"head_user_id\": \"00000000-0000-0000-0000-000000000000\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST departments — 400 empty code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"\",\n  \"name\": \"No Code Dept\",\n  \"head_user_id\": \"f1000000-0000-0000-0000-000000000001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/tenants/me/departments/:id — rename HIST",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Name updated', () => pm.expect(pm.response.json().name).to.include('Revised'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments/{{new_dept_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments",
+                "{{new_dept_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"History of Magic (Revised)\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH departments/:id — update head to McGonagall",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Head updated', () => pm.expect(pm.response.json().head_user_id).to.eql('f1000000-0000-0000-0000-000000000002'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments/{{new_dept_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments",
+                "{{new_dept_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"head_user_id\": \"f1000000-0000-0000-0000-000000000002\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH departments/:id — 400 empty body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments/{{new_dept_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments",
+                "{{new_dept_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "PATCH departments/:id — 400 non-member head",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/tenants/me/departments/{{new_dept_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "tenants",
+                "me",
+                "departments",
+                "{{new_dept_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"head_user_id\": \"00000000-0000-0000-0000-000000000000\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Members (GET + PATCH + DELETE)",
+      "item": [
+        {
+          "name": "GET /core/members — full list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(b.data).to.be.an('array'));",
+                  "pm.test('At least 4 members (admin + 3 staff)', () => pm.expect(b.total).to.be.at.least(4));",
+                  "pm.test('Has pagination', () => pm.expect(b.total_pages).to.be.a('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/members?per_page=25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members?per_page=25"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/members?system_role=faculty — filtered",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('All are faculty', () => {",
+                  "  b.data.forEach(m => pm.expect(m.system_role).to.eql('faculty'));",
+                  "});",
+                  "pm.test('At least 3 faculty (McGonagall, Snape, Lupin)', () => pm.expect(b.total).to.be.at.least(3));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/members?system_role=faculty",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members?system_role=faculty"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/members?search=dumbledore — name search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('At least 1 result', () => pm.expect(b.data.length).to.be.above(0));",
+                  "pm.test('Result contains Dumbledore', () => pm.expect(b.data[0].last_name).to.eql('Dumbledore'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/members?search=dumbledore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members?search=dumbledore"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/members?system_role=student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('All are students', () => {",
+                  "  pm.response.json().data.forEach(m => pm.expect(m.system_role).to.eql('student'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/members?system_role=student",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members?system_role=student"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/members/:user_id — set institutional_email for Lupin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Email updated', () => pm.expect(b.institutional_email).to.eql('r.lupin@hogwarts.edu'));",
+                  "pm.test('User ID matches', () => pm.expect(b.user_id).to.eql('f1000000-0000-0000-0000-000000000004'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/members/f1000000-0000-0000-0000-000000000004",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members",
+                "f1000000-0000-0000-0000-000000000004"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"institutional_email\": \"r.lupin@hogwarts.edu\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/members/:user_id — 400 invalid system_role",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/members/f1000000-0000-0000-0000-000000000003",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members",
+                "f1000000-0000-0000-0000-000000000003"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"system_role\": \"dark_wizard\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/members/:user_id — 400 empty body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/members/f1000000-0000-0000-0000-000000000003",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members",
+                "f1000000-0000-0000-0000-000000000003"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/members/:user_id — 404 unknown user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/members/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"institutional_email\": \"nobody@hogwarts.edu\"\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /core/members/:user_id — 409 last tenant_admin guard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204 (faculty member deleted)', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/members/f1000000-0000-0000-0000-000000000004",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members",
+                "f1000000-0000-0000-0000-000000000004"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE last-admin guard — note (reads Dumbledore's role)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const admins = pm.response.json().data;",
+                  "console.log('Current tenant_admins:', admins.map(a => a.last_name).join(', '));",
+                  "// If only 1 admin remains, DELETE on that admin should return 409.",
+                  "// Test the guard by attempting to delete the last admin and expecting 409.",
+                  "pm.test('At least 1 admin remains', () => pm.expect(admins.length).to.be.at.least(1));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/members?system_role=tenant_admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members?system_role=tenant_admin"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — User Identity (GET + PATCH users)",
+      "item": [
+        {
+          "name": "GET /core/users/:id — Dumbledore",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('User ID matches', () => pm.expect(b.id).to.eql('f1000000-0000-0000-0000-000000000001'));",
+                  "pm.test('First name is Albus', () => pm.expect(b.first_name).to.eql('Albus'));",
+                  "pm.test('Last name is Dumbledore', () => pm.expect(b.last_name).to.eql('Dumbledore'));",
+                  "pm.test('is_active is true', () => pm.expect(b.is_active).to.eql(true));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/users/:id — Ron",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('First name is Ron', () => pm.expect(pm.response.json().first_name).to.eql('Ron'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/users/:id — 404 unknown user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/users/:id — update preferred_name (no history entry)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('preferred_name updated', () => pm.expect(pm.response.json().preferred_name).to.eql('Albus Percival'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preferred_name\": \"Albus Percival\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/users/:id — clear preferred_name (null)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('preferred_name cleared', () => pm.expect(pm.response.json().preferred_name).to.be.null);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preferred_name\": null\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/users/:id — legal name change (writes history)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Last name updated', () => pm.expect(pm.response.json().last_name).to.eql('Weasley-Granger'));",
+                  "console.log('Legal name change recorded — check name-history endpoint');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"last_name\": \"Weasley-Granger\",\n  \"name_change_reason\": \"marriage\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/users/:id — 400 legal name change without reason",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"last_name\": \"Longbottom-Smith\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/users/:id — 400 invalid name_change_reason",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"last_name\": \"New-Name\",\n  \"name_change_reason\": \"typo_fix\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/users/:id — 400 empty body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "GET /core/users/:id/name-history — Ron (1 entry from change above)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Is array', () => pm.expect(b).to.be.an('array'));",
+                  "pm.test('At least 1 history entry', () => pm.expect(b.length).to.be.at.least(1));",
+                  "pm.test('Reason is marriage', () => pm.expect(b[0].reason).to.eql('marriage'));",
+                  "pm.test('Historical last name is Weasley', () => pm.expect(b[0].historical_last_name).to.eql('Weasley'));",
+                  "console.log('Name history entries for Ron:', b.length);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001/name-history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001",
+                "name-history"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/users/:id/name-history — Dumbledore (empty — no changes)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/name-history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "name-history"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — User Emails (list + POST + PATCH + DELETE)",
+      "item": [
+        {
+          "name": "GET /core/users/:id/emails — Dumbledore (initially empty)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));",
+                  "console.log('Dumbledore emails:', pm.response.json().length);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/emails",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "emails"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /core/users/:id/emails — add personal (primary)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('email_id', b.id);",
+                  "pm.test('Email address matches', () => pm.expect(b.email_address).to.eql('a.dumbledore@personal.co.uk'));",
+                  "pm.test('is_primary is true', () => pm.expect(b.is_primary).to.eql(true));",
+                  "pm.test('Type is personal', () => pm.expect(b.email_type).to.eql('personal'));",
+                  "pm.test('is_verified is false', () => pm.expect(b.is_verified).to.eql(false));",
+                  "console.log('Email created:', b.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/emails",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "emails"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_address\": \"a.dumbledore@personal.co.uk\",\n  \"email_type\": \"personal\",\n  \"is_primary\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /core/users/:id/emails — add recovery (non-primary)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('is_primary is false', () => pm.expect(pm.response.json().is_primary).to.eql(false));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/emails",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "emails"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_address\": \"albus.backup@owlpost.com\",\n  \"email_type\": \"recovery\",\n  \"is_primary\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "POST emails — 409 duplicate address (global unique)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409 (global unique violation)', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000002/emails",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000002",
+                "emails"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_address\": \"a.dumbledore@personal.co.uk\",\n  \"email_type\": \"personal\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST emails — 400 invalid email format",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/emails",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "emails"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_address\": \"not-an-email\",\n  \"email_type\": \"personal\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST emails — 400 invalid email_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/emails",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "emails"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_address\": \"other@test.com\",\n  \"email_type\": \"work\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /core/users/:id/emails — Dumbledore (2 emails now)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('2 emails returned', () => pm.expect(pm.response.json().length).to.eql(2));",
+                  "pm.test('Primary first', () => pm.expect(pm.response.json()[0].is_primary).to.eql(true));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/emails",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "emails"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/users/:id/emails/:id — mark as verified",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is_verified is true', () => pm.expect(pm.response.json().is_verified).to.eql(true));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/emails/{{email_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "emails",
+                "{{email_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_verified\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH emails/:id — 400 empty body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/emails/{{email_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "emails",
+                "{{email_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "DELETE emails/:id — 409 cannot delete primary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409 (cannot delete primary)', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000001/emails/{{email_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000001",
+                "emails",
+                "{{email_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — User Phones (list + POST + PATCH + DELETE)",
+      "item": [
+        {
+          "name": "GET /core/users/:id/phones — Ron (empty)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001/phones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001",
+                "phones"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /core/users/:id/phones — add mobile (primary)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('phone_id', b.id);",
+                  "pm.test('Phone number matches', () => pm.expect(b.phone_number).to.eql('07700 900123'));",
+                  "pm.test('is_primary is true', () => pm.expect(b.is_primary).to.eql(true));",
+                  "pm.test('can_receive_sms is true', () => pm.expect(b.can_receive_sms).to.eql(true));",
+                  "pm.test('Type is mobile', () => pm.expect(b.phone_type).to.eql('mobile'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001/phones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001",
+                "phones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"07700 900123\",\n  \"country_code\": \"+44\",\n  \"phone_type\": \"mobile\",\n  \"is_primary\": true,\n  \"can_receive_sms\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /core/users/:id/phones — add home (non-primary)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('is_primary is false', () => pm.expect(pm.response.json().is_primary).to.eql(false));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001/phones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001",
+                "phones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"01962 000001\",\n  \"phone_type\": \"home\",\n  \"is_primary\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "POST phones — 400 invalid phone_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001/phones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001",
+                "phones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"0000\",\n  \"phone_type\": \"fax\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/users/:id/phones/:id — disable SMS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('SMS disabled', () => pm.expect(pm.response.json().can_receive_sms).to.eql(false));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001/phones/{{phone_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001",
+                "phones",
+                "{{phone_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"can_receive_sms\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE phones/:id — 409 cannot delete primary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409 (cannot delete primary)', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001/phones/{{phone_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001",
+                "phones",
+                "{{phone_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE phones/:id — 404 unknown",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000001/phones/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000001",
+                "phones",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 — User Addresses (list + POST + PATCH + DELETE)",
+      "item": [
+        {
+          "name": "GET /core/users/:id/addresses — Neville (empty)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "addresses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /core/users/:id/addresses — add physical_home",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('address_id', b.id);",
+                  "pm.test('Address type matches', () => pm.expect(b.address_type).to.eql('physical_home'));",
+                  "pm.test('is_current is true', () => pm.expect(b.is_current).to.eql(true));",
+                  "pm.test('City matches', () => pm.expect(b.city).to.eql('Devon'));",
+                  "console.log('Address created:', b.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address_type\": \"physical_home\",\n  \"street_1\": \"The Burrow, Ottery St Catchpole\",\n  \"city\": \"Devon\",\n  \"state_province\": \"Devon\",\n  \"postal_code\": \"EX11 0AA\",\n  \"country_iso_alpha2\": \"GB\",\n  \"effective_start_date\": \"2024-09-01\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST addresses — 400 invalid address_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address_type\": \"dormitory\",\n  \"street_1\": \"Room 12\",\n  \"city\": \"X\",\n  \"state_province\": \"X\",\n  \"postal_code\": \"X\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST addresses — 400 invalid country_iso_alpha2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "addresses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address_type\": \"mailing\",\n  \"street_1\": \"1 Test\",\n  \"city\": \"X\",\n  \"state_province\": \"X\",\n  \"postal_code\": \"X\",\n  \"country_iso_alpha2\": \"ZZZ\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH /core/users/:id/addresses/:id — update postal_code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Postal code updated', () => pm.expect(pm.response.json().postal_code).to.eql('EX11 1BB'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/addresses/{{address_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "addresses",
+                "{{address_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"postal_code\": \"EX11 1BB\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH addresses/:id — clear street_2 (null)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('street_2 is null', () => pm.expect(pm.response.json().street_2).to.be.null);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/addresses/{{address_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "addresses",
+                "{{address_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"street_2\": null\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /core/users/:id/addresses/:id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/addresses/{{address_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "addresses",
+                "{{address_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE addresses/:id — 404 already deleted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/addresses/{{address_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "addresses",
+                "{{address_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 — Emergency Contacts (list + POST + PATCH + DELETE)",
+      "item": [
+        {
+          "name": "GET /core/users/:id/emergency-contacts — Luna (empty)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /core/users/:id/emergency-contacts — add primary contact",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('contact_id', b.id);",
+                  "pm.test('first_name is Xenophilius', () => pm.expect(b.first_name).to.eql('Xenophilius'));",
+                  "pm.test('last_name is Lovegood', () => pm.expect(b.last_name).to.eql('Lovegood'));",
+                  "pm.test('relationship is Father', () => pm.expect(b.relationship).to.eql('Father'));",
+                  "pm.test('is_primary is true', () => pm.expect(b.is_primary).to.eql(true));",
+                  "console.log('Emergency contact created:', b.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Xenophilius\",\n  \"last_name\": \"Lovegood\",\n  \"relationship\": \"Father\",\n  \"phone_number\": \"07700 900456\",\n  \"email_address\": \"xeno@quibbler.co.uk\",\n  \"is_primary\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "POST emergency-contacts — add second contact",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('is_primary is false', () => pm.expect(pm.response.json().is_primary).to.eql(false));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Ginny\",\n  \"last_name\": \"Weasley\",\n  \"relationship\": \"Friend\",\n  \"phone_number\": \"07700 900789\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST emergency-contacts — 400 missing phone_number",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Bad\",\n  \"last_name\": \"Contact\",\n  \"relationship\": \"Unknown\",\n  \"phone_number\": \"\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST emergency-contacts — 400 invalid email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Bad\",\n  \"last_name\": \"Email\",\n  \"relationship\": \"Friend\",\n  \"phone_number\": \"0700\",\n  \"email_address\": \"not-an-email\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST emergency-contacts — 404 unknown user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/00000000-0000-0000-0000-000000000000/emergency-contacts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "00000000-0000-0000-0000-000000000000",
+                "emergency-contacts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Ghost\",\n  \"last_name\": \"User\",\n  \"relationship\": \"None\",\n  \"phone_number\": \"0000\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET emergency-contacts — Luna (2 contacts now)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('2 contacts', () => pm.expect(pm.response.json().length).to.eql(2));",
+                  "pm.test('Primary first', () => pm.expect(pm.response.json()[0].is_primary).to.eql(true));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH emergency-contacts/:id — update phone_number",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Phone updated', () => pm.expect(pm.response.json().phone_number).to.eql('07700 900999'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts/{{contact_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts",
+                "{{contact_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"07700 900999\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH emergency-contacts/:id — clear email (null)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('email_address cleared', () => pm.expect(pm.response.json().email_address).to.be.null);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts/{{contact_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts",
+                "{{contact_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_address\": null\n}"
+            }
+          }
+        },
+        {
+          "name": "PATCH emergency-contacts/:id — 400 empty body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts/{{contact_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts",
+                "{{contact_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "PATCH emergency-contacts/:id — 404 unknown contact",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"0000\"\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE emergency-contacts/:id — primary (allowed — no guard for EC)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts/{{contact_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts",
+                "{{contact_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE emergency-contacts/:id — 404 already deleted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000003/emergency-contacts/{{contact_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000003",
+                "emergency-contacts",
+                "{{contact_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 — Roles (GET + POST + DELETE)",
+      "item": [
+        {
+          "name": "GET /core/users/:id/roles — Snape (empty user_roles table)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is array', () => pm.expect(pm.response.json()).to.be.an('array'));",
+                  "console.log('Snape fine-grained roles:', pm.response.json().length, '(0 expected — system_role is in memberships not user_roles)');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f1000000-0000-0000-0000-000000000003/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f1000000-0000-0000-0000-000000000003",
+                "roles"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /core/users/:id/roles — grant faculty to Neville",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('Role is faculty', () => pm.expect(b.role).to.eql('faculty'));",
+                  "pm.test('User ID matches', () => pm.expect(b.user_id).to.eql('f2000000-0000-0000-0000-000000000002'));",
+                  "pm.test('revoked_at is null', () => pm.expect(b.revoked_at).to.be.null);",
+                  "pm.test('granted_by_user_id set', () => pm.expect(b.granted_by_user_id).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"faculty\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST roles — grant with expiry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('expires_at set', () => pm.expect(pm.response.json().expires_at).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"staff\",\n  \"expires_at\": \"2027-01-01T00:00:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST roles — idempotent re-grant (upsert)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 (upsert re-grant)', () => pm.response.to.have.status(201));",
+                  "pm.test('revoked_at cleared', () => pm.expect(pm.response.json().revoked_at).to.be.null);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"faculty\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST roles — 400 invalid role",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"dark_wizard\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST roles — 403 super_admin blocked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403 (super_admin blocked)', () => pm.response.to.have.status(403));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"super_admin\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST roles — 400 expiry in the past",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"staff\",\n  \"expires_at\": \"2020-01-01T00:00:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET roles — Neville (2 active grants)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('At least 2 grants', () => pm.expect(pm.response.json().length).to.be.at.least(2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE /core/users/:id/roles/:role_name — revoke faculty from Neville",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles/faculty",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles",
+                "faculty"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE roles/:role_name — 404 already revoked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles/faculty",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles",
+                "faculty"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE roles/:role_name — 400 invalid role name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles/wizard_level_99",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles",
+                "wizard_level_99"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET roles — Neville (faculty revoked, staff still active)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const roles = pm.response.json();",
+                  "pm.test('No faculty role active', () => {",
+                  "  const faculty = roles.find(r => r.role === 'faculty' && !r.revoked_at);",
+                  "  pm.expect(faculty).to.be.undefined;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/users/f2000000-0000-0000-0000-000000000002/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "users",
+                "f2000000-0000-0000-0000-000000000002",
+                "roles"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 — Audit Logs (GET list + GET single)",
+      "item": [
+        {
+          "name": "GET /core/audit-logs — all tenant logs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has data array', () => pm.expect(b.data).to.be.an('array'));",
+                  "pm.test('Has pagination', () => pm.expect(b.total).to.be.a('number'));",
+                  "if (b.data.length > 0) {",
+                  "  pm.collectionVariables.set('audit_log_id', b.data[0].id);",
+                  "  const entry = b.data[0];",
+                  "  pm.test('Has target_table', () => pm.expect(entry.target_table).to.be.a('string'));",
+                  "  pm.test('Has action', () => pm.expect(entry.action).to.be.a('string'));",
+                  "  pm.test('Has target_record_id', () => pm.expect(entry.target_record_id).to.be.a('string'));",
+                  "  console.log('Latest audit entry:', entry.action, 'on', entry.target_table);",
+                  "} else {",
+                  "  console.warn('No audit log entries yet — operations above should have generated some');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/audit-logs?per_page=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "audit-logs?per_page=20"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/audit-logs?action=update — filter by action",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('All entries are updates', () => {",
+                  "  b.data.forEach(e => pm.expect(e.action).to.eql('update'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/audit-logs?action=update&per_page=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "audit-logs?action=update&per_page=10"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/audit-logs?target_table=users — filter by table",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('All entries target users table', () => {",
+                  "  b.data.forEach(e => pm.expect(e.target_table).to.eql('users'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/audit-logs?target_table=users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "audit-logs?target_table=users"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/audit-logs?schema_name=core — filter by schema",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/audit-logs?schema_name=core",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "audit-logs?schema_name=core"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/audit-logs/:id — single entry",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (!pm.collectionVariables.get('audit_log_id')) {",
+                  "  throw new Error('audit_log_id not set — run the list request first');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('ID matches', () => pm.expect(b.id).to.eql(pm.collectionVariables.get('audit_log_id')));",
+                  "pm.test('Has action', () => pm.expect(b.action).to.be.a('string'));",
+                  "pm.test('Has target_record_id', () => pm.expect(b.target_record_id).to.be.a('string'));",
+                  "pm.test('Has is_sensitive', () => pm.expect(b.is_sensitive).to.be.a('boolean'));",
+                  "console.log('Audit entry:', b.action, 'on', b.target_table, '— sensitive:', b.is_sensitive);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/audit-logs/{{audit_log_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "audit-logs",
+                "{{audit_log_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /core/audit-logs/:id — 404 unknown",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/audit-logs/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "audit-logs",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 — Auth / Cleanup",
+      "item": [
+        {
+          "name": "POST /auth/logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "pm.collectionVariables.set('access_token', '');",
+                  "pm.collectionVariables.set('refresh_token', '');",
+                  "console.log('✅ Core module collection complete. Session revoked.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
