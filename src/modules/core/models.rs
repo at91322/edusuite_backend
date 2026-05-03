@@ -244,15 +244,25 @@ pub struct RoleGrant {
 // GROUP 5 — AUDIT LOG (Step 5 — stubs)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Actual audit_logs columns:
+//   action (core.audit_action enum: insert|update|delete|soft_delete)
+//   target_table (varchar 100), target_record_id (uuid)
+//   old_payload, new_payload, changed_fields (jsonb)
+//   schema_name (varchar 50), source_service, is_sensitive
 #[derive(Debug, Deserialize)]
 pub struct ListAuditLogsParams {
-    pub table_name:  Option<String>,
-    pub actor_id:    Option<Uuid>,
-    pub date_from:   Option<chrono::NaiveDate>,
-    pub date_to:     Option<chrono::NaiveDate>,
-    pub operation:   Option<String>,
-    pub page:        Option<i64>,
-    pub per_page:    Option<i64>,
+    /// Filter by target_table (e.g. "users", "enrollments")
+    pub target_table: Option<String>,
+    /// Filter by schema_name (e.g. "core", "sis", "finance")
+    pub schema_name:  Option<String>,
+    /// Filter by actor_id UUID
+    pub actor_id:     Option<Uuid>,
+    /// Filter by action enum value: insert|update|delete|soft_delete
+    pub action:       Option<String>,
+    pub date_from:    Option<chrono::NaiveDate>,
+    pub date_to:      Option<chrono::NaiveDate>,
+    pub page:         Option<i64>,
+    pub per_page:     Option<i64>,
 }
 
 impl ListAuditLogsParams {
@@ -263,16 +273,26 @@ impl ListAuditLogsParams {
 
 #[derive(Debug, Serialize)]
 pub struct AuditLogEntry {
-    pub id:           Uuid,
-    pub schema_name:  String,
-    pub table_name:   String,
-    pub operation:    String,
-    pub actor_id:     Option<Uuid>,
-    pub actor_name:   Option<String>,
-    pub record_id:    Option<serde_json::Value>,
-    pub old_data:     Option<serde_json::Value>,
-    pub new_data:     Option<serde_json::Value>,
-    pub created_at:   DateTime<Utc>,
+    pub id:               Uuid,
+    /// Schema of the affected table (e.g. "core", "sis", "finance")
+    pub schema_name:      Option<String>,
+    /// Table name of the affected record
+    pub target_table:     String,
+    /// UUID of the affected record
+    pub target_record_id: Uuid,
+    /// Action performed: insert|update|delete|soft_delete
+    pub action:           String,
+    pub actor_id:         Option<Uuid>,
+    pub actor_name:       Option<String>,
+    /// Full row snapshot before the operation (NULL for inserts)
+    pub old_payload:      Option<serde_json::Value>,
+    /// Full row snapshot after the operation (NULL for deletes)
+    pub new_payload:      Option<serde_json::Value>,
+    /// Only fields that changed, with old/new values (UPDATE only)
+    pub changed_fields:   Option<serde_json::Value>,
+    pub source_service:   Option<String>,
+    pub is_sensitive:     bool,
+    pub created_at:       DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]

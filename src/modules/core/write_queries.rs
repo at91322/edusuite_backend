@@ -1403,3 +1403,207 @@ pub async fn delete_emergency_contact(
 
     Ok(())
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STEP 4 — ROLE MANAGEMENT WRITES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+use super::write_models::{GrantRoleRequest, RoleGrantResponse};
+
+// ── POST /core/users/:id/roles ────────────────────────────────────────────────
+
+/// Grant a role to a user within the current tenant.
+///
+/// user_roles has a composite PK (tenant_id, user_id, role) — no surrogate id.
+/// Uses INSERT ... ON CONFLICT to handle the re-grant case (previously revoked):
+///   - If no row exists: inserts a fresh grant.
+///   - If row exists and is revoked: clears revoked_at to re-activate.
+///   - If row exists and is active: updates expires_at and granted_by_user_id
+///     (idempotent re-grant with optional expiry update).
+///
+/// role is a core.system_role PG enum → untyped query required.
+pub async fn grant_role(
+    tx:          &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id:   uuid::Uuid,
+    user_id:     uuid::Uuid,
+    grantor_id:  uuid::Uuid,
+    req:         &GrantRoleRequest,
+) -> Result<RoleGrantResponse, AppError> {
+
+    // Guard: target user is a member of this tenant
+    let is_member: bool = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM core.tenant_memberships
+            WHERE user_id = $1 AND tenant_id = $2
+        ) AS "exists!"
+        "#,
+        user_id,
+        tenant_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    if !is_member {
+        return Err(AppError::NotFound(
+            format!("User {} is not a member of this tenant", user_id)
+        ));
+    }
+
+    // Guard: cannot grant super_admin via this endpoint (platform-only operation)
+    if req.role == "super_admin" {
+        return Err(AppError::Forbidden(
+            "super_admin role cannot be granted via the tenant API".into()
+        ));
+    }
+
+    use sqlx::Row as _;
+
+    // UPSERT: insert or re-activate a previously revoked grant
+    let row = sqlx::query(
+        r#"
+        INSERT INTO core.user_roles
+            (tenant_id, user_id, role, granted_by_user_id, expires_at, granted_at)
+        VALUES ($1, $2, $3::core.system_role, $4, $5, now())
+        ON CONFLICT (tenant_id, user_id, role) DO UPDATE SET
+            revoked_at         = NULL,
+            granted_at         = now(),
+            granted_by_user_id = EXCLUDED.granted_by_user_id,
+            expires_at         = EXCLUDED.expires_at,
+            updated_at         = now()
+        RETURNING
+            user_id, tenant_id, role::text AS role,
+            granted_at, granted_by_user_id, expires_at, revoked_at
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(&req.role)
+    .bind(grantor_id)
+    .bind(req.expires_at)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    tracing::info!(
+        tenant_id  = %tenant_id,
+        user_id    = %user_id,
+        role       = %req.role,
+        grantor_id = %grantor_id,
+        "Role granted"
+    );
+
+    Ok(RoleGrantResponse {
+        user_id:            row.try_get("user_id").map_err(AppError::from)?,
+        tenant_id:          row.try_get("tenant_id").map_err(AppError::from)?,
+        role:               row.try_get("role").map_err(AppError::from)?,
+        granted_at:         row.try_get("granted_at").map_err(AppError::from)?,
+        granted_by_user_id: row.try_get("granted_by_user_id").map_err(AppError::from)?,
+        expires_at:         row.try_get("expires_at").map_err(AppError::from)?,
+        revoked_at:         row.try_get("revoked_at").map_err(AppError::from)?,
+    })
+}
+
+// ── DELETE /core/users/:id/roles/:role_name ───────────────────────────────────
+
+/// Revoke a role from a user within the current tenant.
+///
+/// Soft-revoke: sets revoked_at = now() rather than hard-deleting.
+/// This preserves the audit trail — we always want to know who had which
+/// role and for how long.
+///
+/// Returns 404 if the role grant doesn't exist or is already revoked.
+/// Returns 409 if attempting to revoke the last tenant_admin role.
+pub async fn revoke_role(
+    tx:         &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id:  uuid::Uuid,
+    user_id:    uuid::Uuid,
+    role_name:  &str,
+) -> Result<(), AppError> {
+
+    // Guard: role value is valid before hitting the DB
+    if !super::write_models::VALID_SYSTEM_ROLES.contains(&role_name) {
+        return Err(AppError::BadRequest(format!(
+            "role '{}' is invalid; must be one of: {}",
+            role_name,
+            super::write_models::VALID_SYSTEM_ROLES.join(", ")
+        )));
+    }
+
+    // Guard: grant exists and is currently active
+    let is_active: bool = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM core.user_roles
+            WHERE tenant_id  = $1
+              AND user_id    = $2
+              AND role::text = $3
+              AND revoked_at IS NULL
+        ) AS "exists!"
+        "#,
+        tenant_id,
+        user_id,
+        role_name,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    if !is_active {
+        return Err(AppError::NotFound(format!(
+            "Active '{}' role grant not found for user {}", role_name, user_id
+        )));
+    }
+
+    // Guard: cannot revoke the last tenant_admin in this tenant
+    if role_name == "tenant_admin" {
+        let admin_count: i64 = sqlx::query_scalar!(
+            r#"
+            SELECT COUNT(*)::bigint AS "count!"
+            FROM core.user_roles
+            WHERE tenant_id   = $1
+              AND role::text  = 'tenant_admin'
+              AND revoked_at  IS NULL
+            "#,
+            tenant_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+
+        if admin_count <= 1 {
+            return Err(AppError::Conflict(
+                "Cannot revoke the last tenant_admin role — grant it to another user first".into()
+            ));
+        }
+    }
+
+    // Soft-revoke
+    sqlx::query!(
+        r#"
+        UPDATE core.user_roles SET
+            revoked_at = now(),
+            updated_at = now()
+        WHERE tenant_id  = $1
+          AND user_id    = $2
+          AND role::text = $3
+          AND revoked_at IS NULL
+        "#,
+        tenant_id,
+        user_id,
+        role_name,
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    tracing::info!(
+        tenant_id = %tenant_id,
+        user_id   = %user_id,
+        role      = %role_name,
+        "Role revoked"
+    );
+
+    Ok(())
+}

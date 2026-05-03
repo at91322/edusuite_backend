@@ -574,18 +574,20 @@ pub async fn list_audit_logs(
         r#"
         SELECT COUNT(*)::bigint AS "count!"
         FROM core.audit_logs
-        WHERE tenant_id  = current_setting('app.current_tenant_id', true)::uuid
-          AND ($1::text IS NULL OR target_table     = $1)
-          AND ($2::uuid IS NULL OR actor_id         = $2)
-          AND ($3::text IS NULL OR action::text      = $3)
-          AND ($4::date IS NULL OR created_at::date >= $4)
-          AND ($5::date IS NULL OR created_at::date <= $5)
+        WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid
+          AND ($1::text IS NULL OR target_table  = $1)
+          AND ($2::text IS NULL OR schema_name   = $2)
+          AND ($3::uuid IS NULL OR actor_id      = $3)
+          AND ($4::text IS NULL OR action::text  = $4)
+          AND ($5::date IS NULL OR created_at::date >= $5)
+          AND ($6::date IS NULL OR created_at::date <= $6)
         "#,
-        params.table_name.clone() as Option<String>,
-        params.actor_id           as Option<Uuid>,
-        params.operation.clone()  as Option<String>,
-        params.date_from          as Option<NaiveDate>,
-        params.date_to            as Option<NaiveDate>,
+        params.target_table.clone() as Option<String>,
+        params.schema_name.clone()  as Option<String>,
+        params.actor_id             as Option<Uuid>,
+        params.action.clone()       as Option<String>,
+        params.date_from            as Option<NaiveDate>,
+        params.date_to              as Option<NaiveDate>,
     )
     .fetch_one(&mut **tx)
     .await
@@ -594,28 +596,37 @@ pub async fn list_audit_logs(
     let rows = sqlx::query(
         r#"
         SELECT
-            al.id, al.schema_name, al.target_table,
-            al.action::text         AS operation,
+            al.id,
+            al.schema_name,
+            al.target_table,
+            al.target_record_id,
+            al.action::text                      AS action,
             al.actor_id,
-            u.first_name || ' ' || u.last_name AS actor_name,
-            al.target_record_id, al.old_payload, al.new_payload,
+            u.first_name || ' ' || u.last_name   AS actor_name,
+            al.old_payload,
+            al.new_payload,
+            al.changed_fields,
+            al.source_service,
+            al.is_sensitive,
             al.created_at
         FROM core.audit_logs al
         LEFT JOIN core.users u ON u.id = al.actor_id
-        WHERE al.tenant_id  = current_setting('app.current_tenant_id', true)::uuid
-          AND ($1::text IS NULL OR al.target_table    = $1)
-          AND ($2::uuid IS NULL OR al.actor_id        = $2)
-          AND ($3::text IS NULL OR al.action::text    = $3)
-          AND ($4::date IS NULL OR al.created_at::date >= $4)
-          AND ($5::date IS NULL OR al.created_at::date <= $5)
+        WHERE al.tenant_id = current_setting('app.current_tenant_id', true)::uuid
+          AND ($1::text IS NULL OR al.target_table  = $1)
+          AND ($2::text IS NULL OR al.schema_name   = $2)
+          AND ($3::uuid IS NULL OR al.actor_id      = $3)
+          AND ($4::text IS NULL OR al.action::text  = $4)
+          AND ($5::date IS NULL OR al.created_at::date >= $5)
+          AND ($6::date IS NULL OR al.created_at::date <= $6)
         ORDER BY al.created_at DESC
-        LIMIT  $6
-        OFFSET $7
+        LIMIT  $7
+        OFFSET $8
         "#,
     )
-    .bind(params.table_name.as_deref())
+    .bind(params.target_table.as_deref())
+    .bind(params.schema_name.as_deref())
     .bind(params.actor_id)
-    .bind(params.operation.as_deref())
+    .bind(params.action.as_deref())
     .bind(params.date_from)
     .bind(params.date_to)
     .bind(params.per_page())
@@ -626,16 +637,19 @@ pub async fn list_audit_logs(
 
     let logs = rows.iter().map(|r| -> Result<AuditLogEntry, AppError> {
         Ok(AuditLogEntry {
-            id:          r.try_get("id").map_err(AppError::from)?,
-            schema_name: r.try_get("schema_name").map_err(AppError::from)?,
-            table_name:  r.try_get("table_name").map_err(AppError::from)?,
-            operation:   r.try_get("operation").map_err(AppError::from)?,
-            actor_id:    r.try_get("actor_id").map_err(AppError::from)?,
-            actor_name:  r.try_get("actor_name").map_err(AppError::from)?,
-            record_id:   r.try_get("target_record_id").map_err(AppError::from)?,
-            old_data:    r.try_get("old_payload").map_err(AppError::from)?,
-            new_data:    r.try_get("new_payload").map_err(AppError::from)?,
-            created_at:  r.try_get("created_at").map_err(AppError::from)?,
+            id:               r.try_get("id").map_err(AppError::from)?,
+            schema_name:      r.try_get("schema_name").map_err(AppError::from)?,
+            target_table:     r.try_get("target_table").map_err(AppError::from)?,
+            target_record_id: r.try_get("target_record_id").map_err(AppError::from)?,
+            action:           r.try_get("action").map_err(AppError::from)?,
+            actor_id:         r.try_get("actor_id").map_err(AppError::from)?,
+            actor_name:       r.try_get("actor_name").map_err(AppError::from)?,
+            old_payload:      r.try_get("old_payload").map_err(AppError::from)?,
+            new_payload:      r.try_get("new_payload").map_err(AppError::from)?,
+            changed_fields:   r.try_get("changed_fields").map_err(AppError::from)?,
+            source_service:   r.try_get("source_service").map_err(AppError::from)?,
+            is_sensitive:     r.try_get("is_sensitive").map_err(AppError::from)?,
+            created_at:       r.try_get("created_at").map_err(AppError::from)?,
         })
     }).collect::<Result<Vec<_>, _>>()?;
 
@@ -643,23 +657,30 @@ pub async fn list_audit_logs(
 }
 
 pub async fn get_audit_log(
-    tx:  &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tx:     &mut sqlx::Transaction<'_, sqlx::Postgres>,
     log_id: Uuid,
 ) -> Result<Option<AuditLogEntry>, AppError> {
 
     let row = sqlx::query(
         r#"
         SELECT
-            al.id, al.schema_name, al.target_table,
-            al.action::text         AS operation,
+            al.id,
+            al.schema_name,
+            al.target_table,
+            al.target_record_id,
+            al.action::text                      AS action,
             al.actor_id,
-            u.first_name || ' ' || u.last_name AS actor_name,
-            al.target_record_id, al.old_payload, al.new_payload,
+            u.first_name || ' ' || u.last_name   AS actor_name,
+            al.old_payload,
+            al.new_payload,
+            al.changed_fields,
+            al.source_service,
+            al.is_sensitive,
             al.created_at
         FROM core.audit_logs al
         LEFT JOIN core.users u ON u.id = al.actor_id
-        WHERE al.id         = $1
-          AND al.tenant_id  = current_setting('app.current_tenant_id', true)::uuid
+        WHERE al.id        = $1
+          AND al.tenant_id = current_setting('app.current_tenant_id', true)::uuid
         "#,
     )
     .bind(log_id)
@@ -668,15 +689,18 @@ pub async fn get_audit_log(
     .map_err(AppError::from)?;
 
     Ok(row.map(|r| AuditLogEntry {
-        id:          r.try_get("id").unwrap_or_default(),
-        schema_name: r.try_get("schema_name").unwrap_or_default(),
-        table_name:  r.try_get("table_name").unwrap_or_default(),
-        operation:   r.try_get("operation").unwrap_or_default(),
-        actor_id:    r.try_get("actor_id").unwrap_or_default(),
-        actor_name:  r.try_get("actor_name").unwrap_or_default(),
-        record_id:   r.try_get("record_id").unwrap_or_default(),
-        old_data:    r.try_get("old_data").unwrap_or_default(),
-        new_data:    r.try_get("new_data").unwrap_or_default(),
-        created_at:  r.try_get("created_at").unwrap_or_else(|_| chrono::Utc::now()),
+        id:               r.try_get("id").unwrap_or_default(),
+        schema_name:      r.try_get("schema_name").unwrap_or_default(),
+        target_table:     r.try_get("target_table").unwrap_or_default(),
+        target_record_id: r.try_get("target_record_id").unwrap_or_default(),
+        action:           r.try_get("action").unwrap_or_default(),
+        actor_id:         r.try_get("actor_id").unwrap_or_default(),
+        actor_name:       r.try_get("actor_name").unwrap_or_default(),
+        old_payload:      r.try_get("old_payload").unwrap_or_default(),
+        new_payload:      r.try_get("new_payload").unwrap_or_default(),
+        changed_fields:   r.try_get("changed_fields").unwrap_or_default(),
+        source_service:   r.try_get("source_service").unwrap_or_default(),
+        is_sensitive:     r.try_get("is_sensitive").unwrap_or(false),
+        created_at:       r.try_get("created_at").unwrap_or_else(|_| chrono::Utc::now()),
     }))
 }

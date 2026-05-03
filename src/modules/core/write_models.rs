@@ -731,3 +731,54 @@ impl PatchEmergencyContactRequest {
         if errors.is_empty() { Ok(()) } else { Err(errors) }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STEP 4 — ROLE MANAGEMENT WRITES
+// POST   /core/users/:id/roles
+// DELETE /core/users/:id/roles/:role_name
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Grant a role to a user within the current tenant.
+///
+/// user_roles has a composite PK of (tenant_id, user_id, role) — no surrogate id.
+/// If the role has previously been granted and revoked, this re-grants it by
+/// clearing revoked_at rather than inserting a duplicate row.
+#[derive(Debug, Deserialize)]
+pub struct GrantRoleRequest {
+    /// core.system_role enum value.
+    pub role:       String,
+    /// Optional expiry. If provided, the role grant automatically lapses at
+    /// this timestamp. Must be in the future.
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl GrantRoleRequest {
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+        if !VALID_SYSTEM_ROLES.contains(&self.role.as_str()) {
+            errors.push(format!(
+                "role '{}' is invalid; must be one of: {}",
+                self.role,
+                VALID_SYSTEM_ROLES.join(", ")
+            ));
+        }
+        if let Some(exp) = self.expires_at {
+            if exp <= chrono::Utc::now() {
+                errors.push("expires_at must be in the future".into());
+            }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+/// Response for a granted role — mirrors the user_roles row.
+#[derive(Debug, Serialize)]
+pub struct RoleGrantResponse {
+    pub user_id:            uuid::Uuid,
+    pub tenant_id:          uuid::Uuid,
+    pub role:               String,
+    pub granted_at:         chrono::DateTime<chrono::Utc>,
+    pub granted_by_user_id: Option<uuid::Uuid>,
+    pub expires_at:         Option<chrono::DateTime<chrono::Utc>>,
+    pub revoked_at:         Option<chrono::DateTime<chrono::Utc>>,
+}
