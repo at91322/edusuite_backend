@@ -8,7 +8,6 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use super::write_models::*;
-use super::models::DepartmentSummary;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GROUP 1a — PATCH /core/tenants/me
@@ -147,7 +146,8 @@ pub async fn create_department(
     )
     .fetch_optional(&mut **tx)
     .await
-    .map_err(AppError::from)?;
+    .map_err(AppError::from)?
+    .flatten();
 
     Ok(DepartmentResponse {
         id:           row.try_get("id").map_err(AppError::from)?,
@@ -246,6 +246,7 @@ pub async fn patch_department(
         .fetch_optional(&mut **tx)
         .await
         .map_err(AppError::from)?
+        .flatten()
     } else {
         None
     };

@@ -21,7 +21,7 @@ pub mod write_models;
 pub mod write_queries;
 
 use axum::{
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch},
     Router,
 };
 use crate::state::AppState;

@@ -208,19 +208,19 @@ pub struct UserAddress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Serialize)]
+// Actual columns: id, user_id, first_name, last_name, relationship (varchar),
+// phone_number, email_address, is_primary, created_at
+// No name/phone_primary/secondary/can_pickup/notes/updated_at columns exist.
 pub struct EmergencyContact {
-    pub id:               Uuid,
-    pub user_id:          Uuid,
-    pub name:             String,
-    pub relationship:     String,
-    pub phone_primary:    String,
-    pub phone_secondary:  Option<String>,
-    pub email:            Option<String>,
-    pub is_primary:       bool,
-    pub can_pickup:       bool,
-    pub notes:            Option<String>,
-    pub created_at:       DateTime<Utc>,
-    pub updated_at:       DateTime<Utc>,
+    pub id:            Uuid,
+    pub user_id:       Uuid,
+    pub first_name:    String,
+    pub last_name:     String,
+    pub relationship:  String,
+    pub phone_number:  String,
+    pub email_address: Option<String>,
+    pub is_primary:    bool,
+    pub created_at:    DateTime<Utc>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

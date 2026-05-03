@@ -301,7 +301,7 @@ pub async fn get_user(
         r#"
         SELECT
             u.id, u.username, u.first_name, u.middle_name,
-            u.last_name, u.preferred_name, u.suffix,
+            u.last_name, u.preferred_name, u.last_name_suffix AS suffix,
             u.is_active, u.created_at, u.updated_at
         FROM core.users u
         JOIN core.tenant_memberships tm
@@ -484,14 +484,16 @@ pub async fn list_emergency_contacts(
     user_id: Uuid,
 ) -> Result<Vec<EmergencyContact>, AppError> {
 
+    // Actual columns: id, user_id, first_name, last_name, relationship (varchar),
+    // phone_number, email_address, is_primary, created_at
+    // No: name, phone_primary/secondary, can_pickup, notes, updated_at
     let rows = sqlx::query!(
         r#"
         SELECT
-            id, user_id, name,
-            relationship::text   AS "relationship!",
-            phone_primary, phone_secondary, email,
-            is_primary, can_pickup, notes,
-            created_at, updated_at
+            id, user_id, first_name, last_name,
+            relationship,
+            phone_number, email_address,
+            is_primary, created_at
         FROM core.emergency_contacts
         WHERE user_id = $1
         ORDER BY is_primary DESC, created_at ASC
@@ -503,18 +505,15 @@ pub async fn list_emergency_contacts(
     .map_err(AppError::from)?;
 
     Ok(rows.into_iter().map(|r| EmergencyContact {
-        id:              r.id,
-        user_id:         r.user_id,
-        name:            r.name,
-        relationship:    r.relationship,
-        phone_primary:   r.phone_primary,
-        phone_secondary: r.phone_secondary,
-        email:           r.email,
-        is_primary:      r.is_primary,
-        can_pickup:      r.can_pickup,
-        notes:           r.notes,
-        created_at:      r.created_at,
-        updated_at:      r.updated_at,
+        id:           r.id,
+        user_id:      r.user_id,
+        first_name:   r.first_name,
+        last_name:    r.last_name,
+        relationship: r.relationship,
+        phone_number: r.phone_number,
+        email_address: r.email_address,
+        is_primary:   r.is_primary,
+        created_at:   r.created_at,
     }).collect())
 }
 
@@ -576,9 +575,9 @@ pub async fn list_audit_logs(
         SELECT COUNT(*)::bigint AS "count!"
         FROM core.audit_logs
         WHERE tenant_id  = current_setting('app.current_tenant_id', true)::uuid
-          AND ($1::text IS NULL OR table_name  = $1)
-          AND ($2::uuid IS NULL OR actor_id    = $2)
-          AND ($3::text IS NULL OR operation::text = $3)
+          AND ($1::text IS NULL OR target_table     = $1)
+          AND ($2::uuid IS NULL OR actor_id         = $2)
+          AND ($3::text IS NULL OR action::text      = $3)
           AND ($4::date IS NULL OR created_at::date >= $4)
           AND ($5::date IS NULL OR created_at::date <= $5)
         "#,
@@ -595,18 +594,18 @@ pub async fn list_audit_logs(
     let rows = sqlx::query(
         r#"
         SELECT
-            al.id, al.schema_name, al.table_name,
-            al.operation::text      AS operation,
+            al.id, al.schema_name, al.target_table,
+            al.action::text         AS operation,
             al.actor_id,
             u.first_name || ' ' || u.last_name AS actor_name,
-            al.record_id, al.old_data, al.new_data,
+            al.target_record_id, al.old_payload, al.new_payload,
             al.created_at
         FROM core.audit_logs al
         LEFT JOIN core.users u ON u.id = al.actor_id
         WHERE al.tenant_id  = current_setting('app.current_tenant_id', true)::uuid
-          AND ($1::text IS NULL OR al.table_name     = $1)
-          AND ($2::uuid IS NULL OR al.actor_id       = $2)
-          AND ($3::text IS NULL OR al.operation::text = $3)
+          AND ($1::text IS NULL OR al.target_table    = $1)
+          AND ($2::uuid IS NULL OR al.actor_id        = $2)
+          AND ($3::text IS NULL OR al.action::text    = $3)
           AND ($4::date IS NULL OR al.created_at::date >= $4)
           AND ($5::date IS NULL OR al.created_at::date <= $5)
         ORDER BY al.created_at DESC
@@ -633,9 +632,9 @@ pub async fn list_audit_logs(
             operation:   r.try_get("operation").map_err(AppError::from)?,
             actor_id:    r.try_get("actor_id").map_err(AppError::from)?,
             actor_name:  r.try_get("actor_name").map_err(AppError::from)?,
-            record_id:   r.try_get("record_id").map_err(AppError::from)?,
-            old_data:    r.try_get("old_data").map_err(AppError::from)?,
-            new_data:    r.try_get("new_data").map_err(AppError::from)?,
+            record_id:   r.try_get("target_record_id").map_err(AppError::from)?,
+            old_data:    r.try_get("old_payload").map_err(AppError::from)?,
+            new_data:    r.try_get("new_payload").map_err(AppError::from)?,
             created_at:  r.try_get("created_at").map_err(AppError::from)?,
         })
     }).collect::<Result<Vec<_>, _>>()?;
@@ -651,11 +650,11 @@ pub async fn get_audit_log(
     let row = sqlx::query(
         r#"
         SELECT
-            al.id, al.schema_name, al.table_name,
-            al.operation::text      AS operation,
+            al.id, al.schema_name, al.target_table,
+            al.action::text         AS operation,
             al.actor_id,
             u.first_name || ' ' || u.last_name AS actor_name,
-            al.record_id, al.old_data, al.new_data,
+            al.target_record_id, al.old_payload, al.new_payload,
             al.created_at
         FROM core.audit_logs al
         LEFT JOIN core.users u ON u.id = al.actor_id
