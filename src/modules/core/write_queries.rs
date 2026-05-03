@@ -1162,3 +1162,244 @@ pub async fn delete_address(
 
     Ok(())
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STEP 3 — EMERGENCY CONTACT WRITES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+use super::write_models::{
+    CreateEmergencyContactRequest, PatchEmergencyContactRequest, EmergencyContactResponse,
+};
+
+// ── POST /core/users/:id/emergency-contacts ───────────────────────────────────
+
+/// Add an emergency contact for a user.
+///
+/// RLS note: emergency_contacts uses cross_tenant_user_isolation — there is no
+/// tenant_id column on the table. RLS visibility is controlled by the user's
+/// tenant membership. The write query confirms the user exists in the current
+/// tenant context before inserting.
+///
+/// If is_primary = true, demotes the existing primary contact first.
+pub async fn create_emergency_contact(
+    tx:      &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: uuid::Uuid,
+    req:     &CreateEmergencyContactRequest,
+) -> Result<EmergencyContactResponse, AppError> {
+
+    // Guard: user exists in the current tenant context (RLS-scoped query)
+    let user_exists: bool = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM core.users u
+            JOIN core.tenant_memberships tm
+              ON tm.user_id = u.id
+              AND tm.tenant_id = current_setting('app.current_tenant_id', true)::uuid
+            WHERE u.id = $1
+        ) AS "exists!"
+        "#,
+        user_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    if !user_exists {
+        return Err(AppError::NotFound(format!("User {} not found", user_id)));
+    }
+
+    let is_primary = req.is_primary.unwrap_or(false);
+
+    // Demote existing primary before promoting the new one
+    if is_primary {
+        sqlx::query!(
+            "UPDATE core.emergency_contacts SET is_primary = false WHERE user_id = $1 AND is_primary = true",
+            user_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+    }
+
+    let row = sqlx::query!(
+        r#"
+        INSERT INTO core.emergency_contacts
+            (user_id, first_name, last_name, relationship, phone_number, email_address, is_primary)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, first_name, last_name, relationship, phone_number,
+                  email_address, is_primary, created_at
+        "#,
+        user_id,
+        req.first_name.trim(),
+        req.last_name.trim(),
+        req.relationship.trim(),
+        req.phone_number.trim(),
+        req.email_address.as_deref(),
+        is_primary,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    tracing::info!(
+        user_id    = %user_id,
+        contact_id = %row.id,
+        is_primary,
+        "Emergency contact created"
+    );
+
+    Ok(EmergencyContactResponse {
+        id:            row.id,
+        user_id,
+        first_name:    row.first_name,
+        last_name:     row.last_name,
+        relationship:  row.relationship,
+        phone_number:  row.phone_number,
+        email_address: row.email_address,
+        is_primary:    row.is_primary,
+        created_at:    row.created_at,
+    })
+}
+
+// ── PATCH /core/users/:id/emergency-contacts/:contact_id ─────────────────────
+
+/// Update an emergency contact.
+///
+/// Uses COALESCE for simple fields. email_address uses MaybePatch three-state:
+///   Absent  → keep current value
+///   Null    → clear the email (set to NULL)
+///   Value   → set to new email
+///
+/// is_primary promotion demotes the existing primary first, then updates.
+pub async fn patch_emergency_contact(
+    tx:         &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id:    uuid::Uuid,
+    contact_id: uuid::Uuid,
+    req:        &PatchEmergencyContactRequest,
+) -> Result<EmergencyContactResponse, AppError> {
+
+    // Guard: contact exists and belongs to this user
+    let exists: bool = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM core.emergency_contacts
+            WHERE id = $1 AND user_id = $2
+        ) AS "exists!"
+        "#,
+        contact_id,
+        user_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    if !exists {
+        return Err(AppError::NotFound(
+            format!("Emergency contact {} not found for user {}", contact_id, user_id)
+        ));
+    }
+
+    // Demote existing primary if promoting this contact
+    if req.is_primary == Some(true) {
+        sqlx::query!(
+            "UPDATE core.emergency_contacts SET is_primary = false WHERE user_id = $1 AND is_primary = true",
+            user_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+    }
+
+    // Fetch current for MaybePatch merge on email_address
+    let current_email: Option<String> = sqlx::query_scalar!(
+        "SELECT email_address FROM core.emergency_contacts WHERE id = $1",
+        contact_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    let new_email: Option<String> = match &req.email_address {
+        super::write_models::MaybePatch::Value(v) => Some(v.clone()),
+        super::write_models::MaybePatch::Null      => None,
+        super::write_models::MaybePatch::Absent    => current_email,
+    };
+
+    let row = sqlx::query!(
+        r#"
+        UPDATE core.emergency_contacts SET
+            first_name    = COALESCE($3, first_name),
+            last_name     = COALESCE($4, last_name),
+            relationship  = COALESCE($5, relationship),
+            phone_number  = COALESCE($6, phone_number),
+            email_address = $7,
+            is_primary    = COALESCE($8, is_primary)
+        WHERE id = $1 AND user_id = $2
+        RETURNING id, first_name, last_name, relationship, phone_number,
+                  email_address, is_primary, created_at
+        "#,
+        contact_id,
+        user_id,
+        req.first_name.as_deref(),
+        req.last_name.as_deref(),
+        req.relationship.as_deref(),
+        req.phone_number.as_deref(),
+        new_email,
+        req.is_primary,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    Ok(EmergencyContactResponse {
+        id:            row.id,
+        user_id,
+        first_name:    row.first_name,
+        last_name:     row.last_name,
+        relationship:  row.relationship,
+        phone_number:  row.phone_number,
+        email_address: row.email_address,
+        is_primary:    row.is_primary,
+        created_at:    row.created_at,
+    })
+}
+
+// ── DELETE /core/users/:id/emergency-contacts/:contact_id ────────────────────
+
+/// Delete an emergency contact.
+///
+/// No soft-delete — emergency contacts are not compliance records.
+/// No primary-deletion guard: unlike emails/phones, there is no system
+/// requirement for a user to always have an emergency contact on file
+/// (especially relevant for adult Higher Ed users). The caller may delete
+/// whichever contact they choose, including the primary.
+pub async fn delete_emergency_contact(
+    tx:         &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id:    uuid::Uuid,
+    contact_id: uuid::Uuid,
+) -> Result<(), AppError> {
+
+    let rows_deleted = sqlx::query!(
+        "DELETE FROM core.emergency_contacts WHERE id = $1 AND user_id = $2",
+        contact_id,
+        user_id,
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::from)?
+    .rows_affected();
+
+    if rows_deleted == 0 {
+        return Err(AppError::NotFound(
+            format!("Emergency contact {} not found for user {}", contact_id, user_id)
+        ));
+    }
+
+    tracing::info!(
+        user_id    = %user_id,
+        contact_id = %contact_id,
+        "Emergency contact deleted"
+    );
+
+    Ok(())
+}

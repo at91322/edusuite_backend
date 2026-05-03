@@ -208,9 +208,10 @@ pub struct UserAddress {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Serialize)]
-// Actual columns: id, user_id, first_name, last_name, relationship (varchar),
-// phone_number, email_address, is_primary, created_at
-// No name/phone_primary/secondary/can_pickup/notes/updated_at columns exist.
+// Actual columns: id, user_id, first_name, last_name, relationship (varchar 100),
+// phone_number, email_address (nullable), is_primary, created_at.
+// No updated_at, no name, no phone_secondary, no can_pickup, no notes.
+// RLS: cross_tenant_user_isolation (gates on user's tenant membership).
 pub struct EmergencyContact {
     pub id:            Uuid,
     pub user_id:       Uuid,

@@ -591,3 +591,143 @@ impl PatchAddressRequest {
         if errors.is_empty() { Ok(()) } else { Err(errors) }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STEP 3 — EMERGENCY CONTACT WRITES
+// POST   /core/users/:id/emergency-contacts
+// PATCH  /core/users/:id/emergency-contacts/:contact_id
+// DELETE /core/users/:id/emergency-contacts/:contact_id
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── POST /core/users/:id/emergency-contacts ───────────────────────────────────
+
+/// Create a new emergency contact for a user.
+///
+/// Actual table columns: first_name, last_name, relationship (varchar),
+/// phone_number, email_address (nullable), is_primary.
+/// No updated_at, no can_pickup, no notes columns exist.
+///
+/// If is_primary = true, the existing primary contact is demoted first.
+#[derive(Debug, Deserialize)]
+pub struct CreateEmergencyContactRequest {
+    pub first_name:    String,
+    pub last_name:     String,
+    /// Free-text relationship description (e.g. "Mother", "Spouse", "Guardian")
+    pub relationship:  String,
+    pub phone_number:  String,
+    pub email_address: Option<String>,
+    /// Defaults to false. If true, demotes the current primary first.
+    pub is_primary:    Option<bool>,
+}
+
+impl CreateEmergencyContactRequest {
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+        if self.first_name.trim().is_empty() {
+            errors.push("first_name is required".into());
+        }
+        if self.first_name.len() > 100 {
+            errors.push("first_name must be 100 characters or fewer".into());
+        }
+        if self.last_name.trim().is_empty() {
+            errors.push("last_name is required".into());
+        }
+        if self.last_name.len() > 100 {
+            errors.push("last_name must be 100 characters or fewer".into());
+        }
+        if self.relationship.trim().is_empty() {
+            errors.push("relationship is required".into());
+        }
+        if self.relationship.len() > 100 {
+            errors.push("relationship must be 100 characters or fewer".into());
+        }
+        if self.phone_number.trim().is_empty() {
+            errors.push("phone_number is required".into());
+        }
+        if self.phone_number.len() > 50 {
+            errors.push("phone_number must be 50 characters or fewer".into());
+        }
+        if let Some(ref e) = self.email_address {
+            if !e.contains('@') {
+                errors.push("email_address must be a valid email address".into());
+            }
+            if e.len() > 255 {
+                errors.push("email_address must be 255 characters or fewer".into());
+            }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+/// Response for POST and PATCH emergency contact operations.
+/// Mirrors the actual table columns exactly.
+#[derive(Debug, Serialize)]
+pub struct EmergencyContactResponse {
+    pub id:            uuid::Uuid,
+    pub user_id:       uuid::Uuid,
+    pub first_name:    String,
+    pub last_name:     String,
+    pub relationship:  String,
+    pub phone_number:  String,
+    pub email_address: Option<String>,
+    pub is_primary:    bool,
+    pub created_at:    chrono::DateTime<chrono::Utc>,
+}
+
+// ── PATCH /core/users/:id/emergency-contacts/:contact_id ─────────────────────
+
+/// Partial update for an emergency contact.
+/// All fields are optional — absent fields retain current values.
+/// is_primary promotion demotes the existing primary first.
+#[derive(Debug, Deserialize)]
+pub struct PatchEmergencyContactRequest {
+    pub first_name:    Option<String>,
+    pub last_name:     Option<String>,
+    pub relationship:  Option<String>,
+    pub phone_number:  Option<String>,
+    pub email_address: MaybePatch<String>,
+    pub is_primary:    Option<bool>,
+}
+
+impl PatchEmergencyContactRequest {
+    pub fn has_changes(&self) -> bool {
+        self.first_name.is_some()
+            || self.last_name.is_some()
+            || self.relationship.is_some()
+            || self.phone_number.is_some()
+            || !matches!(self.email_address, MaybePatch::Absent)
+            || self.is_primary.is_some()
+    }
+
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+        if !self.has_changes() {
+            errors.push("request body contains no fields to update".into());
+        }
+        if let Some(ref v) = self.first_name {
+            if v.trim().is_empty() { errors.push("first_name cannot be blank".into()); }
+            if v.len() > 100 { errors.push("first_name must be 100 characters or fewer".into()); }
+        }
+        if let Some(ref v) = self.last_name {
+            if v.trim().is_empty() { errors.push("last_name cannot be blank".into()); }
+            if v.len() > 100 { errors.push("last_name must be 100 characters or fewer".into()); }
+        }
+        if let Some(ref v) = self.relationship {
+            if v.trim().is_empty() { errors.push("relationship cannot be blank".into()); }
+            if v.len() > 100 { errors.push("relationship must be 100 characters or fewer".into()); }
+        }
+        if let Some(ref v) = self.phone_number {
+            if v.trim().is_empty() { errors.push("phone_number cannot be blank".into()); }
+            if v.len() > 50 { errors.push("phone_number must be 50 characters or fewer".into()); }
+        }
+        if let MaybePatch::Value(ref e) = self.email_address {
+            if !e.contains('@') {
+                errors.push("email_address must be a valid email address".into());
+            }
+            if e.len() > 255 {
+                errors.push("email_address must be 255 characters or fewer".into());
+            }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
