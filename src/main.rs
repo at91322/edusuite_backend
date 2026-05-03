@@ -59,15 +59,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Bootstrapping EduSuite Enterprise API...");
 
     // ── 2. Configuration ──────────────────────────────────────────────────
-    // Config::from_env() calls dotenvy::dotenv() internally, validates all
-    // required variables, and panics with a clear message if any are missing.
     let config = Config::from_env();
 
     // ── 3. PostgreSQL Connection Pool ─────────────────────────────────────
-    // NOTE: If using PgBouncer in Transaction mode, disable prepared
-    // statements by appending `?statement_cache_capacity=0` to DATABASE_URL.
     let pool = PgPoolOptions::new()
-        .max_connections(50)    // Adjust based on PgBouncer limits
+        .max_connections(50)
         .min_connections(5)
         .acquire_timeout(Duration::from_secs(5))
         .idle_timeout(Duration::from_secs(600))
@@ -82,9 +78,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Database schema is up to date.");
 
     // ── 5. Application State ──────────────────────────────────────────────
-    // Both encoding and decoding keys are kept on AppState:
-    //   jwt_encoding_key — for signing new tokens (login, refresh)
-    //   jwt_decoding_key — for verifying incoming tokens (AuthUser extractor)
     let app_state = AppState {
         db: pool.clone(),
         jwt_encoding_key: std::sync::Arc::new(
@@ -101,22 +94,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── 7. Middleware ─────────────────────────────────────────────────────
     let cors = CorsLayer::new()
-        // TODO: restrict to specific frontend domains before production
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Capture port before app_state is consumed by with_state() below.
     let port = app_state.config.port;
 
     // ── 8. Router ─────────────────────────────────────────────────────────
-    // All domain modules are mounted. Auth routes are public (no JWT required
-    // — they produce the token). All other /api/v1 routes will require JWT
-    // once require_jwt middleware is activated below.
+    // JWT is enforced per-request by the AuthUser extractor in http::auth.
+    // Every handler that requires authentication declares `mut user: AuthUser`
+    // as a parameter — the extractor validates the token, checks the token
+    // family is not revoked, and opens an RLS-scoped DB transaction.
+    // No separate route_layer middleware is needed or used.
     let api_v1 = Router::new()
-        // ── Auth (public — no JWT required) ───────────────────────────────
+        // ── Auth (public — produces the token) ───────────────────────────
         .nest("/auth",     modules::auth_governance::router())
-        // ── Domain modules (JWT required — uncomment middleware below) ────
+        // ── Domain modules (JWT enforced via AuthUser extractor) ──────────
         .nest("/board",    modules::board::router())
         .nest("/catalog",  modules::catalog::router())
         .nest("/cms",      modules::cms::router())
@@ -134,13 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/reference",modules::reference::router())
         .nest("/sis",      modules::sis::router())
         .nest("/sis",      modules::lms::sis_bridge_router())
-        .nest("/workflow", modules::workflow::router())
-        // ── JWT middleware (activate once first domain handlers are built) ─
-        .route_layer(middleware::from_fn_with_state(
-            app_state.clone(),
-            http::auth::require_jwt,
-        ))
-        ;
+        .nest("/workflow", modules::workflow::router());
 
     let app = Router::new()
         .route("/health", get(health_check))
@@ -175,12 +162,7 @@ fn spawn_event_bus_worker(_pool: sqlx::PgPool) {
 
         loop {
             interval.tick().await;
-
             // TODO: implement event dispatch when outbox Rust structs are defined
-            // 1. SELECT * FROM event_bus.outbox
-            //    WHERE status = 'pending' LIMIT 50 FOR UPDATE SKIP LOCKED
-            // 2. Dispatch each event to the subscriber service
-            // 3. UPDATE event_bus.outbox SET status = 'processed' WHERE id = ...
         }
     });
 }

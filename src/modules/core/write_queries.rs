@@ -410,12 +410,12 @@ pub async fn delete_member(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 use super::write_models::{
-    PatchUserRequest, VALID_NAME_CHANGE_REASONS,
+    PatchUserRequest,
     CreateEmailRequest, PatchEmailRequest, EmailResponse,
     CreatePhoneRequest, PatchPhoneRequest, PhoneResponse,
     CreateAddressRequest, PatchAddressRequest, AddressResponse,
 };
-use super::models::{UserDetail, UserEmail, UserPhone, UserAddress};
+use super::models::UserDetail;
 // ── PATCH /core/users/:id ────────────────────────────────────────────────────
 
 /// Update a user's name and/or non-name fields.
@@ -486,20 +486,21 @@ pub async fn patch_user(
         let reason = req.name_change_reason.as_deref().unwrap(); // validated earlier
 
         // Insert the current (pre-change) name as the historical record
-        sqlx::query!(
+// UNTYPED: reason binds to core.name_change_reason PG enum
+        sqlx::query(
             r#"
             INSERT INTO core.user_name_history
                 (user_id, historical_first_name, historical_middle_name,
                  historical_last_name, reason, changed_by_user_id)
             VALUES ($1, $2, $3, $4, $5::core.name_change_reason, $6)
             "#,
-            user_id,
-            current.first_name,
-            current.middle_name,
-            current.last_name,
-            reason,
-            actor_id,
         )
+        .bind(user_id)
+        .bind(&current.first_name)
+        .bind(&current.middle_name)
+        .bind(&current.last_name)
+        .bind(reason)
+        .bind(actor_id)
         .execute(&mut **tx)
         .await
         .map_err(AppError::from)?;
