@@ -136,10 +136,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/sis",      modules::lms::sis_bridge_router())
         .nest("/workflow", modules::workflow::router())
         // ── JWT middleware (activate once first domain handlers are built) ─
-        // .route_layer(middleware::from_fn_with_state(
-        //     app_state.clone(),
-        //     http::auth::require_jwt,
-        // ))
+        .route_layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            http::auth::require_jwt,
+        ))
         ;
 
     let app = Router::new()
