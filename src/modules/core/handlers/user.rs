@@ -1,3 +1,4 @@
+#![allow(unused_mut)]
 // src/modules/core/handlers/user.rs
 // Group 2 — User identity management (Step 2)
 
@@ -35,7 +36,7 @@ pub async fn patch_user(
     Path(_user_id): Path<Uuid>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }
 
@@ -71,7 +72,7 @@ pub async fn create_email(
     Path(_user_id): Path<Uuid>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }
 
@@ -83,7 +84,7 @@ pub async fn patch_email(
     Path((_user_id, _email_id)): Path<(Uuid, Uuid)>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }
 
@@ -94,7 +95,7 @@ pub async fn delete_email(
     mut user: AuthUser,
     Path((_user_id, _email_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }
 
@@ -118,7 +119,7 @@ pub async fn create_phone(
     Path(_user_id): Path<Uuid>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }
 
@@ -130,7 +131,7 @@ pub async fn patch_phone(
     Path((_user_id, _phone_id)): Path<(Uuid, Uuid)>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }
 
@@ -141,7 +142,7 @@ pub async fn delete_phone(
     mut user: AuthUser,
     Path((_user_id, _phone_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }
 
@@ -165,7 +166,7 @@ pub async fn create_address(
     Path(_user_id): Path<Uuid>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }
 
@@ -177,7 +178,7 @@ pub async fn patch_address(
     Path((_user_id, _addr_id)): Path<(Uuid, Uuid)>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }
 
@@ -188,6 +189,6 @@ pub async fn delete_address(
     mut user: AuthUser,
     Path((_user_id, _addr_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 2: not yet implemented".into()))
 }

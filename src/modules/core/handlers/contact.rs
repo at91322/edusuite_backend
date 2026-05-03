@@ -1,3 +1,4 @@
+#![allow(unused_mut)]
 // src/modules/core/handlers/contact.rs
 // Group 3 — Emergency contacts (Step 3)
 
@@ -28,7 +29,7 @@ pub async fn create_emergency_contact(
     Path(_user_id): Path<Uuid>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 3: not yet implemented".into()))
 }
 
@@ -38,7 +39,7 @@ pub async fn patch_emergency_contact(
     Path((_user_id, _contact_id)): Path<(Uuid, Uuid)>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 3: not yet implemented".into()))
 }
 
@@ -47,6 +48,6 @@ pub async fn delete_emergency_contact(
     mut user: AuthUser,
     Path((_user_id, _contact_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 3: not yet implemented".into()))
 }

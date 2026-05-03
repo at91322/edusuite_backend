@@ -1,3 +1,4 @@
+#![allow(unused_mut)]
 // src/modules/core/handlers/role.rs
 // Group 4 — Role management (Step 4)
 
@@ -28,7 +29,7 @@ pub async fn grant_role(
     Path(_user_id): Path<Uuid>,
     _body: axum::body::Body,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 4: not yet implemented".into()))
 }
 
@@ -37,6 +38,6 @@ pub async fn revoke_role(
     mut user: AuthUser,
     Path((_user_id, _role_name)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, AppError> {
-    user.tx.commit().await.map_err(AppError::from)?;
+    let _ = user; // stub — transaction rolls back automatically
     Err::<StatusCode, _>(AppError::BadRequest("Step 4: not yet implemented".into()))
 }

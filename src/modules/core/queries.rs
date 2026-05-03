@@ -323,7 +323,7 @@ pub async fn get_user(
         last_name:      r.last_name,
         preferred_name: r.preferred_name,
         suffix:         r.suffix,
-        is_active:      r.is_active,
+        is_active:      r.is_active.unwrap_or(true),
         created_at:     r.created_at,
         updated_at:     r.updated_at,
     }))
