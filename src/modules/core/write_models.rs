@@ -209,3 +209,385 @@ pub struct MemberResponse {
     pub system_role:         String,
     pub updated_at:          chrono::DateTime<chrono::Utc>,
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STEP 2 — USER IDENTITY WRITES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Three-state wrapper for PATCH body fields.
+///   Absent  → field not in JSON body — keep current DB value
+///   Null    → field present as JSON null — clear the column
+///   Value(v) → field present with value — update the column
+#[derive(Debug, Deserialize, Default)]
+#[serde(untagged)]
+pub enum MaybePatch<T> {
+    #[default]
+    Absent,
+    Null,
+    Value(T),
+}
+
+impl<T> MaybePatch<T> {
+    pub fn is_absent(&self) -> bool { matches!(self, MaybePatch::Absent) }
+    /// Returns Some(&v) if Value, None otherwise.
+    pub fn as_value(&self) -> Option<&T> {
+        if let MaybePatch::Value(v) = self { Some(v) } else { None }
+    }
+}
+
+// ── PATCH /core/users/:id ────────────────────────────────────────────────────
+
+/// Valid core.name_change_reason enum values.
+pub const VALID_NAME_CHANGE_REASONS: &[&str] = &[
+    "marriage", "divorce", "legal_change", "correction", "gender_transition",
+];
+
+/// Partial update for a user's name fields.
+///
+/// Uses MaybePatch<T> for true three-state semantics on nullable fields:
+///   Absent  → keep current value (field not present in JSON)
+///   Null    → clear the value (field present as JSON null)
+///   Value   → set to new value
+///
+/// first_name and last_name are NOT NULL in the schema — they use Option<String>
+/// but null is rejected in validation.
+///
+/// When any of first_name, middle_name, or last_name changes, the handler
+/// MUST write a user_name_history row with the PRE-CHANGE values and reason.
+#[derive(Debug, Deserialize)]
+pub struct PatchUserRequest {
+    pub first_name:      Option<String>,
+    /// Three-state: absent = keep, null = clear, value = set
+    pub middle_name:     MaybePatch<String>,
+    pub last_name:       Option<String>,
+    /// Three-state: absent = keep, null = clear, value = set
+    pub preferred_name:  MaybePatch<String>,
+    /// Three-state: absent = keep, null = clear, value = set
+    pub last_name_suffix: MaybePatch<String>,
+    /// Required when first_name, middle_name, or last_name changes.
+    /// Must be a valid core.name_change_reason enum value.
+    pub name_change_reason: Option<String>,
+}
+
+impl PatchUserRequest {
+    pub fn has_name_change(&self) -> bool {
+        self.first_name.is_some()
+            || !matches!(self.middle_name, MaybePatch::Absent)
+            || self.last_name.is_some()
+    }
+
+    pub fn has_changes(&self) -> bool {
+        self.has_name_change()
+            || !matches!(self.preferred_name,   MaybePatch::Absent)
+            || !matches!(self.last_name_suffix, MaybePatch::Absent)
+    }
+
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        if !self.has_changes() {
+            errors.push("request body contains no fields to update".into());
+        }
+
+        if let Some(ref v) = self.first_name {
+            if v.trim().is_empty() { errors.push("first_name cannot be blank".into()); }
+            if v.len() > 100 { errors.push("first_name must be 100 characters or fewer".into()); }
+        }
+        if let Some(ref v) = self.last_name {
+            if v.trim().is_empty() { errors.push("last_name cannot be blank".into()); }
+            if v.len() > 255 { errors.push("last_name must be 255 characters or fewer".into()); }
+        }
+        if let MaybePatch::Value(ref v) = self.middle_name {
+            if v.len() > 100 { errors.push("middle_name must be 100 characters or fewer".into()); }
+        }
+        if let MaybePatch::Value(ref v) = self.preferred_name {
+            if v.len() > 100 { errors.push("preferred_name must be 100 characters or fewer".into()); }
+        }
+        if let MaybePatch::Value(ref v) = self.last_name_suffix {
+            if v.len() > 10 { errors.push("last_name_suffix must be 10 characters or fewer".into()); }
+        }
+
+        // name_change_reason required when legal name changes
+        if self.has_name_change() {
+            match &self.name_change_reason {
+                None => errors.push(
+                    "name_change_reason is required when changing first_name, middle_name, or last_name".into()
+                ),
+                Some(r) if !VALID_NAME_CHANGE_REASONS.contains(&r.as_str()) => {
+                    errors.push(format!(
+                        "name_change_reason '{}' is invalid; must be one of: {}",
+                        r, VALID_NAME_CHANGE_REASONS.join(", ")
+                    ));
+                }
+                _ => {}
+            }
+        }
+
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+// ── POST /core/users/:id/emails ───────────────────────────────────────────────
+
+/// Valid core.email_type enum values.
+pub const VALID_EMAIL_TYPES: &[&str] = &[
+    "institutional", "personal", "recovery", "guardian",
+];
+
+#[derive(Debug, Deserialize)]
+pub struct CreateEmailRequest {
+    pub email_address: String,
+    /// core.email_type — defaults to "personal"
+    pub email_type:    Option<String>,
+    /// If true, demotes the current primary before setting this one
+    pub is_primary:    Option<bool>,
+}
+
+impl CreateEmailRequest {
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+        if self.email_address.trim().is_empty() {
+            errors.push("email_address is required".into());
+        }
+        if !self.email_address.contains('@') {
+            errors.push("email_address must be a valid email address".into());
+        }
+        if self.email_address.len() > 255 {
+            errors.push("email_address must be 255 characters or fewer".into());
+        }
+        if let Some(ref t) = self.email_type {
+            if !VALID_EMAIL_TYPES.contains(&t.as_str()) {
+                errors.push(format!(
+                    "email_type '{}' is invalid; must be one of: {}",
+                    t, VALID_EMAIL_TYPES.join(", ")
+                ));
+            }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+/// Response for POST and PATCH email operations.
+#[derive(Debug, Serialize)]
+pub struct EmailResponse {
+    pub id:            uuid::Uuid,
+    pub user_id:       uuid::Uuid,
+    pub email_address: String,
+    pub email_type:    String,
+    pub is_primary:    bool,
+    pub is_verified:   bool,
+    pub created_at:    chrono::DateTime<chrono::Utc>,
+}
+
+/// PATCH /core/users/:id/emails/:email_id
+/// Only is_primary and email_type are patchable — the address itself is immutable.
+#[derive(Debug, Deserialize)]
+pub struct PatchEmailRequest {
+    pub is_primary:  Option<bool>,
+    pub email_type:  Option<String>,
+    pub is_verified: Option<bool>,
+}
+
+impl PatchEmailRequest {
+    pub fn has_changes(&self) -> bool {
+        self.is_primary.is_some() || self.email_type.is_some() || self.is_verified.is_some()
+    }
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+        if !self.has_changes() {
+            errors.push("request body contains no fields to update".into());
+        }
+        if let Some(ref t) = self.email_type {
+            if !VALID_EMAIL_TYPES.contains(&t.as_str()) {
+                errors.push(format!(
+                    "email_type '{}' is invalid; must be one of: {}",
+                    t, VALID_EMAIL_TYPES.join(", ")
+                ));
+            }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+// ── POST /core/users/:id/phones ───────────────────────────────────────────────
+
+/// Valid core.phone_type enum values.
+pub const VALID_PHONE_TYPES: &[&str] = &["mobile", "home", "work", "emergency"];
+
+#[derive(Debug, Deserialize)]
+pub struct CreatePhoneRequest {
+    pub phone_number:    String,
+    /// Country dialing code — defaults to "+1"
+    pub country_code:    Option<String>,
+    /// core.phone_type — defaults to "mobile"
+    pub phone_type:      Option<String>,
+    pub is_primary:      Option<bool>,
+    pub can_receive_sms: Option<bool>,
+}
+
+impl CreatePhoneRequest {
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+        if self.phone_number.trim().is_empty() {
+            errors.push("phone_number is required".into());
+        }
+        if self.phone_number.len() > 50 {
+            errors.push("phone_number must be 50 characters or fewer".into());
+        }
+        if let Some(ref t) = self.phone_type {
+            if !VALID_PHONE_TYPES.contains(&t.as_str()) {
+                errors.push(format!(
+                    "phone_type '{}' is invalid; must be one of: {}",
+                    t, VALID_PHONE_TYPES.join(", ")
+                ));
+            }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PhoneResponse {
+    pub id:              uuid::Uuid,
+    pub user_id:         uuid::Uuid,
+    pub phone_number:    String,
+    pub country_code:    String,
+    pub phone_type:      String,
+    pub is_primary:      bool,
+    pub can_receive_sms: bool,
+    pub created_at:      chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PatchPhoneRequest {
+    pub is_primary:      Option<bool>,
+    pub can_receive_sms: Option<bool>,
+    pub phone_type:      Option<String>,
+}
+
+impl PatchPhoneRequest {
+    pub fn has_changes(&self) -> bool {
+        self.is_primary.is_some() || self.can_receive_sms.is_some() || self.phone_type.is_some()
+    }
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+        if !self.has_changes() {
+            errors.push("request body contains no fields to update".into());
+        }
+        if let Some(ref t) = self.phone_type {
+            if !VALID_PHONE_TYPES.contains(&t.as_str()) {
+                errors.push(format!(
+                    "phone_type '{}' is invalid; must be one of: {}",
+                    t, VALID_PHONE_TYPES.join(", ")
+                ));
+            }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+// ── POST /core/users/:id/addresses ────────────────────────────────────────────
+
+/// Valid core.address_type enum values.
+pub const VALID_ADDRESS_TYPES: &[&str] = &["physical_home", "mailing", "billing"];
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAddressRequest {
+    /// core.address_type enum
+    pub address_type:        String,
+    pub street_1:            String,
+    pub street_2:            Option<String>,
+    pub city:                String,
+    pub state_province:      String,
+    pub postal_code:         String,
+    /// ISO 3166-1 alpha-2 — must exist in reference.countries
+    pub country_iso_alpha2:  Option<String>,
+    /// ISO 3166-2 — must exist in reference.subdivisions if provided
+    pub subdivision_code:    Option<String>,
+    /// IANA tz identifier — must exist in reference.timezones if provided
+    pub timezone_identifier: Option<String>,
+    pub effective_start_date: Option<chrono::NaiveDate>,
+}
+
+impl CreateAddressRequest {
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+        if !VALID_ADDRESS_TYPES.contains(&self.address_type.as_str()) {
+            errors.push(format!(
+                "address_type '{}' is invalid; must be one of: {}",
+                self.address_type, VALID_ADDRESS_TYPES.join(", ")
+            ));
+        }
+        if self.street_1.trim().is_empty() { errors.push("street_1 is required".into()); }
+        if self.city.trim().is_empty()     { errors.push("city is required".into()); }
+        if self.state_province.trim().is_empty() { errors.push("state_province is required".into()); }
+        if self.postal_code.trim().is_empty()    { errors.push("postal_code is required".into()); }
+        if let Some(ref c) = self.country_iso_alpha2 {
+            if c.trim().len() != 2 { errors.push("country_iso_alpha2 must be a 2-character ISO code".into()); }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct AddressResponse {
+    pub id:                   uuid::Uuid,
+    pub user_id:              uuid::Uuid,
+    pub address_type:         String,
+    pub street_1:             String,
+    pub street_2:             Option<String>,
+    pub city:                 String,
+    pub state_province:       String,
+    pub postal_code:          String,
+    pub country_iso_alpha2:   Option<String>,
+    pub subdivision_code:     Option<String>,
+    pub timezone_identifier:  Option<String>,
+    pub is_current:           bool,
+    pub is_verified:          bool,
+    pub effective_start_date: chrono::NaiveDate,
+    pub effective_end_date:   Option<chrono::NaiveDate>,
+    pub created_at:           chrono::DateTime<chrono::Utc>,
+    pub updated_at:           chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PatchAddressRequest {
+    pub street_1:            Option<String>,
+    pub street_2:            MaybePatch<String>,
+    pub city:                Option<String>,
+    pub state_province:      Option<String>,
+    pub postal_code:         Option<String>,
+    pub country_iso_alpha2:  Option<String>,
+    pub subdivision_code:    MaybePatch<String>,
+    pub timezone_identifier: MaybePatch<String>,
+    pub is_current:          Option<bool>,
+    pub effective_end_date:  MaybePatch<chrono::NaiveDate>,
+}
+
+impl PatchAddressRequest {
+    pub fn has_changes(&self) -> bool {
+        self.street_1.is_some()
+            || !matches!(self.street_2, MaybePatch::Absent)
+            || self.city.is_some()
+            || self.state_province.is_some()
+            || self.postal_code.is_some()
+            || self.country_iso_alpha2.is_some()
+            || !matches!(self.subdivision_code, MaybePatch::Absent)
+            || !matches!(self.timezone_identifier, MaybePatch::Absent)
+            || self.is_current.is_some()
+            || !matches!(self.effective_end_date, MaybePatch::Absent)
+    }
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+        if !self.has_changes() {
+            errors.push("request body contains no fields to update".into());
+        }
+        if let Some(ref v) = self.street_1 {
+            if v.trim().is_empty() { errors.push("street_1 cannot be blank".into()); }
+        }
+        if let Some(ref v) = self.city {
+            if v.trim().is_empty() { errors.push("city cannot be blank".into()); }
+        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
+    }
+}

@@ -404,3 +404,760 @@ pub async fn delete_member(
 
     Ok(())
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STEP 2 — USER IDENTITY WRITES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+use super::write_models::{
+    PatchUserRequest, VALID_NAME_CHANGE_REASONS,
+    CreateEmailRequest, PatchEmailRequest, EmailResponse,
+    CreatePhoneRequest, PatchPhoneRequest, PhoneResponse,
+    CreateAddressRequest, PatchAddressRequest, AddressResponse,
+};
+use super::models::{UserDetail, UserEmail, UserPhone, UserAddress};
+// ── PATCH /core/users/:id ────────────────────────────────────────────────────
+
+/// Update a user's name and/or non-name fields.
+///
+/// Steps:
+///   1. Guard: user is a member of this tenant (RLS enforces visibility;
+///      this gives a clean 404 rather than a cryptic empty result).
+///   2. Fetch current name values — needed for the history entry and for
+///      MaybePatch::Absent merging.
+///   3. If any legal name field is changing, INSERT into user_name_history
+///      FIRST (capturing pre-change values) then UPDATE core.users.
+///      Both writes share the transaction — if the UPDATE fails, the history
+///      entry rolls back too.
+///   4. Update non-name fields (preferred_name, last_name_suffix) in the
+///      same UPDATE statement.
+pub async fn patch_user(
+    tx:          &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id:   uuid::Uuid,
+    user_id:     uuid::Uuid,
+    actor_id:    uuid::Uuid,   // JWT sub — the person making the change
+    req:         &PatchUserRequest,
+) -> Result<UserDetail, AppError> {
+
+    // ── 1. Guard: user is a member of this tenant ─────────────────────────
+    let current = sqlx::query!(
+        r#"
+        SELECT u.first_name, u.middle_name, u.last_name,
+               u.preferred_name, u.last_name_suffix,
+               u.username, u.is_active, u.created_at, u.updated_at
+        FROM core.users u
+        JOIN core.tenant_memberships tm
+          ON tm.user_id = u.id AND tm.tenant_id = $2
+        WHERE u.id = $1
+        "#,
+        user_id,
+        tenant_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::from)?
+    .ok_or_else(|| AppError::NotFound(format!("User {} not found", user_id)))?;
+
+    // ── 2. Merge MaybePatch fields ────────────────────────────────────────
+    let new_first = req.first_name.as_deref()
+        .unwrap_or(&current.first_name)
+        .trim().to_string();
+    let new_last  = req.last_name.as_deref()
+        .unwrap_or(&current.last_name)
+        .trim().to_string();
+    let new_middle: Option<String> = match &req.middle_name {
+        MaybePatch::Value(v) => Some(v.trim().to_string()),
+        MaybePatch::Null     => None,
+        MaybePatch::Absent   => current.middle_name.clone(),
+    };
+    let new_preferred: Option<String> = match &req.preferred_name {
+        MaybePatch::Value(v) => Some(v.trim().to_string()),
+        MaybePatch::Null     => None,
+        MaybePatch::Absent   => current.preferred_name.clone(),
+    };
+    let new_suffix: Option<String> = match &req.last_name_suffix {
+        MaybePatch::Value(v) => Some(v.trim().to_string()),
+        MaybePatch::Null     => None,
+        MaybePatch::Absent   => current.last_name_suffix.clone(),
+    };
+
+    // ── 3. Write name history BEFORE updating (captures pre-change values) ─
+    if req.has_name_change() {
+        let reason = req.name_change_reason.as_deref().unwrap(); // validated earlier
+
+        // Insert the current (pre-change) name as the historical record
+        sqlx::query!(
+            r#"
+            INSERT INTO core.user_name_history
+                (user_id, historical_first_name, historical_middle_name,
+                 historical_last_name, reason, changed_by_user_id)
+            VALUES ($1, $2, $3, $4, $5::core.name_change_reason, $6)
+            "#,
+            user_id,
+            current.first_name,
+            current.middle_name,
+            current.last_name,
+            reason,
+            actor_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+    }
+
+    // ── 4. UPDATE core.users ──────────────────────────────────────────────
+    let row = sqlx::query!(
+        r#"
+        UPDATE core.users SET
+            first_name       = $2,
+            middle_name      = $3,
+            last_name        = $4,
+            preferred_name   = $5,
+            last_name_suffix = $6,
+            updated_at       = now()
+        WHERE id = $1
+        RETURNING id, username, first_name, middle_name, last_name,
+                  preferred_name, last_name_suffix AS suffix,
+                  is_active, created_at, updated_at
+        "#,
+        user_id,
+        new_first,
+        new_middle,
+        new_last,
+        new_preferred,
+        new_suffix,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    tracing::info!(
+        tenant_id = %tenant_id,
+        user_id   = %user_id,
+        actor_id  = %actor_id,
+        name_change = req.has_name_change(),
+        "User profile updated"
+    );
+
+    Ok(UserDetail {
+        id:             row.id,
+        username:       row.username,
+        first_name:     row.first_name,
+        middle_name:    row.middle_name,
+        last_name:      row.last_name,
+        preferred_name: row.preferred_name,
+        suffix:         row.suffix,
+        is_active:      row.is_active.unwrap_or(true),
+        created_at:     row.created_at,
+        updated_at:     row.updated_at,
+    })
+}
+
+// ── POST /core/users/:id/emails ───────────────────────────────────────────────
+
+/// Add an email address to a user.
+///
+/// The global unique constraint on email_address means a 23505 violation
+/// → AppError::Conflict automatically — no duplicate across any user.
+///
+/// If is_primary = true, clears is_primary on all existing emails first,
+/// then inserts the new primary. Both run in the same transaction.
+pub async fn create_email(
+    tx:      &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: uuid::Uuid,
+    req:     &CreateEmailRequest,
+) -> Result<EmailResponse, AppError> {
+
+    let is_primary  = req.is_primary.unwrap_or(false);
+    let email_type  = req.email_type.as_deref().unwrap_or("personal");
+
+    // Guard: user exists (RLS already scopes this, but gives clean 404)
+    let user_exists: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM core.users WHERE id = $1) AS "exists!""#,
+        user_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    if !user_exists {
+        return Err(AppError::NotFound(format!("User {} not found", user_id)));
+    }
+
+    // Demote existing primary if needed
+    if is_primary {
+        sqlx::query!(
+            "UPDATE core.user_emails SET is_primary = false WHERE user_id = $1 AND is_primary = true",
+            user_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+    }
+
+    // INSERT — 23505 on unique_global_email → Conflict
+    let row = sqlx::query(
+        r#"
+        INSERT INTO core.user_emails (user_id, email_address, type, is_primary)
+        VALUES ($1, $2, $3::core.email_type, $4)
+        RETURNING id, email_address, type::text AS email_type,
+                  is_primary, is_verified, created_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(req.email_address.trim().to_lowercase())
+    .bind(email_type)
+    .bind(is_primary)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    use sqlx::Row as _;
+    Ok(EmailResponse {
+        id:            row.try_get("id").map_err(AppError::from)?,
+        user_id,
+        email_address: row.try_get("email_address").map_err(AppError::from)?,
+        email_type:    row.try_get("email_type").map_err(AppError::from)?,
+        is_primary:    row.try_get("is_primary").map_err(AppError::from)?,
+        is_verified:   row.try_get("is_verified").map_err(AppError::from)?,
+        created_at:    row.try_get("created_at").map_err(AppError::from)?,
+    })
+}
+
+/// Update email metadata (type, primary flag, verified status).
+/// The email_address itself is immutable — changes require DELETE + POST.
+pub async fn patch_email(
+    tx:       &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id:  uuid::Uuid,
+    email_id: uuid::Uuid,
+    req:      &PatchEmailRequest,
+) -> Result<EmailResponse, AppError> {
+
+    // Guard: email belongs to this user
+    let exists: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM core.user_emails WHERE id = $1 AND user_id = $2) AS "exists!""#,
+        email_id, user_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    if !exists {
+        return Err(AppError::NotFound(
+            format!("Email {} not found for user {}", email_id, user_id)
+        ));
+    }
+
+    // Demote current primary if promoting this one
+    if req.is_primary == Some(true) {
+        sqlx::query!(
+            "UPDATE core.user_emails SET is_primary = false WHERE user_id = $1 AND is_primary = true",
+            user_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+    }
+
+    // Guard: cannot demote primary without a replacement
+    if req.is_primary == Some(false) {
+        let is_currently_primary: bool = sqlx::query_scalar!(
+            r#"SELECT is_primary FROM core.user_emails WHERE id = $1"#,
+            email_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+
+        if is_currently_primary {
+            return Err(AppError::Conflict(
+                "Cannot remove is_primary from this address — set another address as primary first".into()
+            ));
+        }
+    }
+
+    let row = sqlx::query(
+        r#"
+        UPDATE core.user_emails SET
+            type       = COALESCE($3::core.email_type, type),
+            is_primary = COALESCE($4, is_primary),
+            is_verified = COALESCE($5, is_verified)
+        WHERE id = $1 AND user_id = $2
+        RETURNING id, email_address, type::text AS email_type,
+                  is_primary, is_verified, created_at
+        "#,
+    )
+    .bind(email_id)
+    .bind(user_id)
+    .bind(req.email_type.as_deref())
+    .bind(req.is_primary)
+    .bind(req.is_verified)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    use sqlx::Row as _;
+    Ok(EmailResponse {
+        id:            row.try_get("id").map_err(AppError::from)?,
+        user_id,
+        email_address: row.try_get("email_address").map_err(AppError::from)?,
+        email_type:    row.try_get("email_type").map_err(AppError::from)?,
+        is_primary:    row.try_get("is_primary").map_err(AppError::from)?,
+        is_verified:   row.try_get("is_verified").map_err(AppError::from)?,
+        created_at:    row.try_get("created_at").map_err(AppError::from)?,
+    })
+}
+
+/// Delete an email address.
+/// Blocks deletion of the primary email — caller must promote another first.
+pub async fn delete_email(
+    tx:       &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id:  uuid::Uuid,
+    email_id: uuid::Uuid,
+) -> Result<(), AppError> {
+
+    let row = sqlx::query!(
+        "SELECT is_primary FROM core.user_emails WHERE id = $1 AND user_id = $2",
+        email_id, user_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::from)?
+    .ok_or_else(|| AppError::NotFound(
+        format!("Email {} not found for user {}", email_id, user_id)
+    ))?;
+
+    if row.is_primary {
+        return Err(AppError::Conflict(
+            "Cannot delete the primary email address — promote another address first".into()
+        ));
+    }
+
+    sqlx::query!("DELETE FROM core.user_emails WHERE id = $1 AND user_id = $2", email_id, user_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+
+    Ok(())
+}
+
+// ── POST /core/users/:id/phones ───────────────────────────────────────────────
+
+pub async fn create_phone(
+    tx:      &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: uuid::Uuid,
+    req:     &CreatePhoneRequest,
+) -> Result<PhoneResponse, AppError> {
+
+    let is_primary   = req.is_primary.unwrap_or(false);
+    let phone_type   = req.phone_type.as_deref().unwrap_or("mobile");
+    let country_code = req.country_code.as_deref().unwrap_or("+1");
+
+    if is_primary {
+        sqlx::query!(
+            "UPDATE core.user_phones SET is_primary = false WHERE user_id = $1 AND is_primary = true",
+            user_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+    }
+
+    let row = sqlx::query(
+        r#"
+        INSERT INTO core.user_phones
+            (user_id, phone_number, country_code, type, is_primary, can_receive_sms)
+        VALUES ($1, $2, $3, $4::core.phone_type, $5, $6)
+        RETURNING id, phone_number, country_code, type::text AS phone_type,
+                  is_primary, can_receive_sms, created_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(req.phone_number.trim())
+    .bind(country_code)
+    .bind(phone_type)
+    .bind(is_primary)
+    .bind(req.can_receive_sms.unwrap_or(false))
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    use sqlx::Row as _;
+    Ok(PhoneResponse {
+        id:              row.try_get("id").map_err(AppError::from)?,
+        user_id,
+        phone_number:    row.try_get("phone_number").map_err(AppError::from)?,
+        country_code:    row.try_get("country_code").map_err(AppError::from)?,
+        phone_type:      row.try_get("phone_type").map_err(AppError::from)?,
+        is_primary:      row.try_get("is_primary").map_err(AppError::from)?,
+        can_receive_sms: row.try_get("can_receive_sms").map_err(AppError::from)?,
+        created_at:      row.try_get("created_at").map_err(AppError::from)?,
+    })
+}
+
+pub async fn patch_phone(
+    tx:       &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id:  uuid::Uuid,
+    phone_id: uuid::Uuid,
+    req:      &PatchPhoneRequest,
+) -> Result<PhoneResponse, AppError> {
+
+    let exists: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM core.user_phones WHERE id = $1 AND user_id = $2) AS "exists!""#,
+        phone_id, user_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    if !exists {
+        return Err(AppError::NotFound(
+            format!("Phone {} not found for user {}", phone_id, user_id)
+        ));
+    }
+
+    if req.is_primary == Some(true) {
+        sqlx::query!(
+            "UPDATE core.user_phones SET is_primary = false WHERE user_id = $1 AND is_primary = true",
+            user_id,
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+    }
+
+    let row = sqlx::query(
+        r#"
+        UPDATE core.user_phones SET
+            type            = COALESCE($3::core.phone_type, type),
+            is_primary      = COALESCE($4, is_primary),
+            can_receive_sms = COALESCE($5, can_receive_sms)
+        WHERE id = $1 AND user_id = $2
+        RETURNING id, phone_number, country_code, type::text AS phone_type,
+                  is_primary, can_receive_sms, created_at
+        "#,
+    )
+    .bind(phone_id)
+    .bind(user_id)
+    .bind(req.phone_type.as_deref())
+    .bind(req.is_primary)
+    .bind(req.can_receive_sms)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    use sqlx::Row as _;
+    Ok(PhoneResponse {
+        id:              row.try_get("id").map_err(AppError::from)?,
+        user_id,
+        phone_number:    row.try_get("phone_number").map_err(AppError::from)?,
+        country_code:    row.try_get("country_code").map_err(AppError::from)?,
+        phone_type:      row.try_get("phone_type").map_err(AppError::from)?,
+        is_primary:      row.try_get("is_primary").map_err(AppError::from)?,
+        can_receive_sms: row.try_get("can_receive_sms").map_err(AppError::from)?,
+        created_at:      row.try_get("created_at").map_err(AppError::from)?,
+    })
+}
+
+pub async fn delete_phone(
+    tx:       &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id:  uuid::Uuid,
+    phone_id: uuid::Uuid,
+) -> Result<(), AppError> {
+
+    let row = sqlx::query!(
+        "SELECT is_primary FROM core.user_phones WHERE id = $1 AND user_id = $2",
+        phone_id, user_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::from)?
+    .ok_or_else(|| AppError::NotFound(
+        format!("Phone {} not found for user {}", phone_id, user_id)
+    ))?;
+
+    if row.is_primary {
+        return Err(AppError::Conflict(
+            "Cannot delete the primary phone number — promote another number first".into()
+        ));
+    }
+
+    sqlx::query!("DELETE FROM core.user_phones WHERE id = $1 AND user_id = $2", phone_id, user_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+
+    Ok(())
+}
+
+// ── POST /core/users/:id/addresses ────────────────────────────────────────────
+
+/// Add an address. Validates country/subdivision/timezone FKs if provided.
+/// Sets is_current = true and effective_start_date = today by default.
+pub async fn create_address(
+    tx:      &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: uuid::Uuid,
+    req:     &CreateAddressRequest,
+) -> Result<AddressResponse, AppError> {
+
+    // Validate country FK
+    if let Some(ref country) = req.country_iso_alpha2 {
+        let exists: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 FROM reference.countries WHERE iso_alpha2 = $1) AS "exists!""#,
+            country.as_str(),
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+        if !exists {
+            return Err(AppError::BadRequest(
+                format!("country_iso_alpha2 '{}' not found in reference.countries", country)
+            ));
+        }
+    }
+
+    // Validate subdivision FK
+    if let Some(ref sub) = req.subdivision_code {
+        let exists: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 FROM reference.subdivisions WHERE code = $1) AS "exists!""#,
+            sub.as_str(),
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+        if !exists {
+            return Err(AppError::BadRequest(
+                format!("subdivision_code '{}' not found in reference.subdivisions", sub)
+            ));
+        }
+    }
+
+    // Validate timezone FK
+    if let Some(ref tz) = req.timezone_identifier {
+        let exists: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 FROM reference.timezones WHERE tz_identifier = $1) AS "exists!""#,
+            tz.as_str(),
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+        if !exists {
+            return Err(AppError::BadRequest(
+                format!("timezone_identifier '{}' not found in reference.timezones", tz)
+            ));
+        }
+    }
+
+    let effective_start = req.effective_start_date
+        .unwrap_or_else(|| chrono::Local::now().date_naive());
+
+    let row = sqlx::query(
+        r#"
+        INSERT INTO core.user_addresses
+            (user_id, type, street_1, street_2, city, state_province,
+             postal_code, country_iso_alpha2, subdivision_code,
+             timezone_identifier, effective_start_date, is_current)
+        VALUES ($1, $2::core.address_type, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
+        RETURNING id, type::text AS address_type, street_1, street_2,
+                  city, state_province, postal_code,
+                  country_iso_alpha2, subdivision_code, timezone_identifier,
+                  is_current, is_verified,
+                  effective_start_date, effective_end_date,
+                  created_at, updated_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(req.address_type.as_str())
+    .bind(req.street_1.trim())
+    .bind(req.street_2.as_deref())
+    .bind(req.city.trim())
+    .bind(req.state_province.trim())
+    .bind(req.postal_code.trim())
+    .bind(req.country_iso_alpha2.as_deref())
+    .bind(req.subdivision_code.as_deref())
+    .bind(req.timezone_identifier.as_deref())
+    .bind(effective_start)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    use sqlx::Row as _;
+    Ok(AddressResponse {
+        id:                   row.try_get("id").map_err(AppError::from)?,
+        user_id,
+        address_type:         row.try_get("address_type").map_err(AppError::from)?,
+        street_1:             row.try_get("street_1").map_err(AppError::from)?,
+        street_2:             row.try_get("street_2").map_err(AppError::from)?,
+        city:                 row.try_get("city").map_err(AppError::from)?,
+        state_province:       row.try_get("state_province").map_err(AppError::from)?,
+        postal_code:          row.try_get("postal_code").map_err(AppError::from)?,
+        country_iso_alpha2:   row.try_get::<Option<&str>, _>("country_iso_alpha2")
+                                  .map_err(AppError::from)?
+                                  .map(|s| s.trim().to_string()),
+        subdivision_code:     row.try_get("subdivision_code").map_err(AppError::from)?,
+        timezone_identifier:  row.try_get("timezone_identifier").map_err(AppError::from)?,
+        is_current:           row.try_get("is_current").map_err(AppError::from)?,
+        is_verified:          row.try_get("is_verified").map_err(AppError::from)?,
+        effective_start_date: row.try_get("effective_start_date").map_err(AppError::from)?,
+        effective_end_date:   row.try_get("effective_end_date").map_err(AppError::from)?,
+        created_at:           row.try_get("created_at").map_err(AppError::from)?,
+        updated_at:           row.try_get("updated_at").map_err(AppError::from)?,
+    })
+}
+
+pub async fn patch_address(
+    tx:      &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: uuid::Uuid,
+    addr_id: uuid::Uuid,
+    req:     &PatchAddressRequest,
+) -> Result<AddressResponse, AppError> {
+
+    let exists: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM core.user_addresses WHERE id = $1 AND user_id = $2) AS "exists!""#,
+        addr_id, user_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    if !exists {
+        return Err(AppError::NotFound(
+            format!("Address {} not found for user {}", addr_id, user_id)
+        ));
+    }
+
+    // Validate subdivision if changing
+    if let Some(ref sub) = req.subdivision_code.as_value() {
+        let exists: bool = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 FROM reference.subdivisions WHERE code = $1) AS "exists!""#,
+            sub.as_str(),
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+        if !exists {
+            return Err(AppError::BadRequest(
+                format!("subdivision_code '{}' not found in reference.subdivisions", sub)
+            ));
+        }
+    }
+
+    // Fetch current for MaybePatch merging
+    let current = sqlx::query!(
+        r#"SELECT street_1, street_2, city, state_province, postal_code,
+                  country_iso_alpha2, subdivision_code, timezone_identifier,
+                  is_current, effective_end_date
+           FROM core.user_addresses WHERE id = $1"#,
+        addr_id,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    let new_street_2: Option<String> = match &req.street_2 {
+        MaybePatch::Value(v) => Some(v.clone()),
+        MaybePatch::Null     => None,
+        MaybePatch::Absent   => current.street_2.clone(),
+    };
+    let new_subdivision: Option<String> = match &req.subdivision_code {
+        MaybePatch::Value(v) => Some(v.clone()),
+        MaybePatch::Null     => None,
+        MaybePatch::Absent   => current.subdivision_code.clone(),
+    };
+    let new_timezone: Option<String> = match &req.timezone_identifier {
+        MaybePatch::Value(v) => Some(v.clone()),
+        MaybePatch::Null     => None,
+        MaybePatch::Absent   => current.timezone_identifier.clone(),
+    };
+    let new_eff_end: Option<chrono::NaiveDate> = match &req.effective_end_date {
+        MaybePatch::Value(v) => Some(*v),
+        MaybePatch::Null     => None,
+        MaybePatch::Absent   => current.effective_end_date,
+    };
+
+    let row = sqlx::query(
+        r#"
+        UPDATE core.user_addresses SET
+            street_1            = COALESCE($3, street_1),
+            street_2            = $4,
+            city                = COALESCE($5, city),
+            state_province      = COALESCE($6, state_province),
+            postal_code         = COALESCE($7, postal_code),
+            country_iso_alpha2  = COALESCE($8, country_iso_alpha2),
+            subdivision_code    = $9,
+            timezone_identifier = $10,
+            is_current          = COALESCE($11, is_current),
+            effective_end_date  = $12,
+            updated_at          = now()
+        WHERE id = $1 AND user_id = $2
+        RETURNING id, type::text AS address_type, street_1, street_2,
+                  city, state_province, postal_code,
+                  country_iso_alpha2, subdivision_code, timezone_identifier,
+                  is_current, is_verified,
+                  effective_start_date, effective_end_date,
+                  created_at, updated_at
+        "#,
+    )
+    .bind(addr_id)
+    .bind(user_id)
+    .bind(req.street_1.as_deref())
+    .bind(new_street_2)
+    .bind(req.city.as_deref())
+    .bind(req.state_province.as_deref())
+    .bind(req.postal_code.as_deref())
+    .bind(req.country_iso_alpha2.as_deref())
+    .bind(new_subdivision)
+    .bind(new_timezone)
+    .bind(req.is_current)
+    .bind(new_eff_end)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    use sqlx::Row as _;
+    Ok(AddressResponse {
+        id:                   row.try_get("id").map_err(AppError::from)?,
+        user_id,
+        address_type:         row.try_get("address_type").map_err(AppError::from)?,
+        street_1:             row.try_get("street_1").map_err(AppError::from)?,
+        street_2:             row.try_get("street_2").map_err(AppError::from)?,
+        city:                 row.try_get("city").map_err(AppError::from)?,
+        state_province:       row.try_get("state_province").map_err(AppError::from)?,
+        postal_code:          row.try_get("postal_code").map_err(AppError::from)?,
+        country_iso_alpha2:   row.try_get::<Option<&str>, _>("country_iso_alpha2")
+                                  .map_err(AppError::from)?
+                                  .map(|s| s.trim().to_string()),
+        subdivision_code:     row.try_get("subdivision_code").map_err(AppError::from)?,
+        timezone_identifier:  row.try_get("timezone_identifier").map_err(AppError::from)?,
+        is_current:           row.try_get("is_current").map_err(AppError::from)?,
+        is_verified:          row.try_get("is_verified").map_err(AppError::from)?,
+        effective_start_date: row.try_get("effective_start_date").map_err(AppError::from)?,
+        effective_end_date:   row.try_get("effective_end_date").map_err(AppError::from)?,
+        created_at:           row.try_get("created_at").map_err(AppError::from)?,
+        updated_at:           row.try_get("updated_at").map_err(AppError::from)?,
+    })
+}
+
+pub async fn delete_address(
+    tx:      &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: uuid::Uuid,
+    addr_id: uuid::Uuid,
+) -> Result<(), AppError> {
+
+    let rows_deleted = sqlx::query!(
+        "DELETE FROM core.user_addresses WHERE id = $1 AND user_id = $2",
+        addr_id, user_id,
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::from)?
+    .rows_affected();
+
+    if rows_deleted == 0 {
+        return Err(AppError::NotFound(
+            format!("Address {} not found for user {}", addr_id, user_id)
+        ));
+    }
+
+    Ok(())
+}
