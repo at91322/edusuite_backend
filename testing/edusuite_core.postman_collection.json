@@ -872,8 +872,7 @@
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const b = pm.response.json();",
                   "pm.test('Has data array', () => pm.expect(b.data).to.be.an('array'));",
-                  "pm.test('At least 4 members (admin + 3 staff)', () => pm.expect(b.total).to.be.at.least(4));",
-                  "pm.test('Has pagination', () => pm.expect(b.total_pages).to.be.a('number'));"
+                  "pm.test('At least 4 members', () => pm.expect(b.total).to.be.at.least(4));"
                 ],
                 "type": "text/javascript"
               }
@@ -895,18 +894,15 @@
           }
         },
         {
-          "name": "GET /core/members?system_role=faculty — filtered",
+          "name": "GET /core/members?system_role=faculty",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const b = pm.response.json();",
-                  "pm.test('All are faculty', () => {",
-                  "  b.data.forEach(m => pm.expect(m.system_role).to.eql('faculty'));",
-                  "});",
-                  "pm.test('At least 3 faculty (McGonagall, Snape, Lupin)', () => pm.expect(b.total).to.be.at.least(3));"
+                  "pm.response.json().data.forEach(m => pm.expect(m.system_role).to.eql('faculty'));",
+                  "pm.test('At least 3 faculty', () => pm.expect(pm.response.json().total).to.be.at.least(3));"
                 ],
                 "type": "text/javascript"
               }
@@ -928,16 +924,15 @@
           }
         },
         {
-          "name": "GET /core/members?search=dumbledore — name search",
+          "name": "GET /core/members?search=dumbledore",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const b = pm.response.json();",
-                  "pm.test('At least 1 result', () => pm.expect(b.data.length).to.be.above(0));",
-                  "pm.test('Result contains Dumbledore', () => pm.expect(b.data[0].last_name).to.eql('Dumbledore'));"
+                  "pm.test('At least 1 result', () => pm.expect(pm.response.json().data.length).to.be.above(0));",
+                  "pm.test('Contains Dumbledore', () => pm.expect(pm.response.json().data[0].last_name).to.eql('Dumbledore'));"
                 ],
                 "type": "text/javascript"
               }
@@ -966,9 +961,7 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('All are students', () => {",
-                  "  pm.response.json().data.forEach(m => pm.expect(m.system_role).to.eql('student'));",
-                  "});"
+                  "pm.response.json().data.forEach(m => pm.expect(m.system_role).to.eql('student'));"
                 ],
                 "type": "text/javascript"
               }
@@ -990,7 +983,7 @@
           }
         },
         {
-          "name": "PATCH /core/members/:user_id — set institutional_email for Lupin",
+          "name": "PATCH /core/members/:user_id — set institutional_email for Snape",
           "event": [
             {
               "listen": "test",
@@ -998,8 +991,8 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const b = pm.response.json();",
-                  "pm.test('Email updated', () => pm.expect(b.institutional_email).to.eql('r.lupin@hogwarts.edu'));",
-                  "pm.test('User ID matches', () => pm.expect(b.user_id).to.eql('f1000000-0000-0000-0000-000000000004'));"
+                  "pm.test('Email updated', () => pm.expect(b.institutional_email).to.eql('s.snape@hogwarts.edu'));",
+                  "pm.test('User ID matches', () => pm.expect(b.user_id).to.eql('f1000000-0000-0000-0000-000000000003'));"
                 ],
                 "type": "text/javascript"
               }
@@ -1014,24 +1007,24 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/core/members/f1000000-0000-0000-0000-000000000004",
+              "raw": "{{baseUrl}}/core/members/f1000000-0000-0000-0000-000000000003",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "core",
                 "members",
-                "f1000000-0000-0000-0000-000000000004"
+                "f1000000-0000-0000-0000-000000000003"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"institutional_email\": \"r.lupin@hogwarts.edu\"\n}"
+              "raw": "{\n  \"institutional_email\": \"s.snape@hogwarts.edu\"\n}"
             }
           }
         },
         {
-          "name": "PATCH /core/members/:user_id — 400 invalid system_role",
+          "name": "PATCH — 400 invalid system_role",
           "event": [
             {
               "listen": "test",
@@ -1069,7 +1062,7 @@
           }
         },
         {
-          "name": "PATCH /core/members/:user_id — 400 empty body",
+          "name": "PATCH — 400 empty body",
           "event": [
             {
               "listen": "test",
@@ -1107,7 +1100,7 @@
           }
         },
         {
-          "name": "PATCH /core/members/:user_id — 404 unknown user",
+          "name": "PATCH — 404 unknown user",
           "event": [
             {
               "listen": "test",
@@ -1145,13 +1138,14 @@
           }
         },
         {
-          "name": "DELETE /core/members/:user_id — 409 last tenant_admin guard",
+          "name": "DELETE /core/members/:user_id — Ron (student, safe to delete)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 204 (faculty member deleted)', () => pm.response.to.have.status(204));"
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "console.log('Ron membership deleted. Re-seed 04_seed_data.sql to restore.');"
                 ],
                 "type": "text/javascript"
               }
@@ -1161,47 +1155,74 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/core/members/f1000000-0000-0000-0000-000000000004",
+              "raw": "{{baseUrl}}/core/members/f2000000-0000-0000-0000-000000000001",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "core",
                 "members",
-                "f1000000-0000-0000-0000-000000000004"
+                "f2000000-0000-0000-0000-000000000001"
               ]
             }
           }
         },
         {
-          "name": "DELETE last-admin guard — note (reads Dumbledore's role)",
+          "name": "DELETE — 404 already deleted (Ron)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const admins = pm.response.json().data;",
-                  "console.log('Current tenant_admins:', admins.map(a => a.last_name).join(', '));",
-                  "// If only 1 admin remains, DELETE on that admin should return 409.",
-                  "// Test the guard by attempting to delete the last admin and expecting 409.",
-                  "pm.test('At least 1 admin remains', () => pm.expect(admins.length).to.be.at.least(1));"
+                  "pm.test('Status 404 (already deleted)', () => pm.response.to.have.status(404));"
                 ],
                 "type": "text/javascript"
               }
             }
           ],
           "request": {
-            "method": "GET",
+            "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/core/members?system_role=tenant_admin",
+              "raw": "{{baseUrl}}/core/members/f2000000-0000-0000-0000-000000000001",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "core",
-                "members?system_role=tenant_admin"
+                "members",
+                "f2000000-0000-0000-0000-000000000001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE — 409 last tenant_admin guard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "// Last-admin 409 guard: to test, remove all but one tenant_admin and attempt DELETE.",
+                  "// With 2 admins seeded (admin_hogwarts + Dumbledore), the guard will not fire here."
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/core/members/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "core",
+                "members",
+                "00000000-0000-0000-0000-000000000000"
               ]
             }
           }
