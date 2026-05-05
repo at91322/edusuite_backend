@@ -119,7 +119,29 @@ pub async fn create_department(
         )));
     }
 
-    // INSERT — (tenant_id, code) unique constraint fires 23505 → Conflict
+    // Guard: code must be unique within this tenant.
+    // The DB has no unique constraint on (tenant_id, code) — enforced here.
+    let code_upper = req.code.trim().to_uppercase();
+    let code_exists: bool = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM core.departments
+            WHERE tenant_id = $1 AND code = $2
+        ) AS "exists!"
+        "#,
+        tenant_id,
+        code_upper,
+    )
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)?;
+
+    if code_exists {
+        return Err(AppError::Conflict(format!(
+            "A department with code '{}' already exists in this tenant", code_upper
+        )));
+    }
+
     let row = sqlx::query(
         r#"
         INSERT INTO core.departments
@@ -129,7 +151,7 @@ pub async fn create_department(
         "#,
     )
     .bind(tenant_id)
-    .bind(req.code.trim().to_uppercase())
+    .bind(&code_upper)
     .bind(req.name.trim())
     .bind(req.head_user_id)
     .fetch_one(&mut **tx)
@@ -151,7 +173,7 @@ pub async fn create_department(
 
     Ok(DepartmentResponse {
         id:           row.try_get("id").map_err(AppError::from)?,
-        code:         req.code.trim().to_uppercase(),
+        code:         code_upper,
         name:         req.name.trim().to_string(),
         head_user_id: Some(req.head_user_id),
         head_name,
@@ -215,6 +237,30 @@ pub async fn patch_department(
     }
 
     let code_upper = req.code.as_deref().map(|c| c.trim().to_uppercase());
+
+    // Guard: if changing the code, ensure the new code isn't already taken
+    if let Some(ref new_code) = code_upper {
+        let code_taken: bool = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM core.departments
+                WHERE tenant_id = $1 AND code = $2 AND id != $3
+            ) AS "exists!"
+            "#,
+            tenant_id,
+            new_code,
+            dept_id,
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::from)?;
+
+        if code_taken {
+            return Err(AppError::Conflict(format!(
+                "A department with code '{}' already exists in this tenant", new_code
+            )));
+        }
+    }
 
     let row = sqlx::query(
         r#"

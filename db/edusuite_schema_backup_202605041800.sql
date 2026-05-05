@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lMz98s6jlkudoNQL2UN1NrA794zzJxIhcAcUGjKwruAM5e9RROzfbaEZrYnhrWN
+\restrict LOjFw30xAIT0wqehuxXHoUtJyjSuitEeVhmuTUPONOrkKZGcwgdE6uYkxnkqYqq
 
 -- Dumped from database version 18.3
 -- Dumped by pg_dump version 18.3
@@ -22999,6 +22999,14 @@ ALTER TABLE ONLY core.module_recommendations
 
 ALTER TABLE ONLY core.module_recommendations
     ADD CONSTRAINT module_recommendations_unique UNIQUE (module_name, recommended_module);
+
+
+--
+-- Name: departments tenant_department_code_unique; Type: CONSTRAINT; Schema: core; Owner: postgres
+--
+
+ALTER TABLE ONLY core.departments
+    ADD CONSTRAINT tenant_department_code_unique UNIQUE (tenant_id, code);
 
 
 --
@@ -69512,5 +69520,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA workflow GRANT SELECT,INSER
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lMz98s6jlkudoNQL2UN1NrA794zzJxIhcAcUGjKwruAM5e9RROzfbaEZrYnhrWN
+\unrestrict LOjFw30xAIT0wqehuxXHoUtJyjSuitEeVhmuTUPONOrkKZGcwgdE6uYkxnkqYqq
 
